@@ -1,0 +1,8 @@
+.env
+node_modules
+resultados
+
+informes
+
+# Liquidaciones y casos con datos personales reales (solo para ejecutar en local).
+casos

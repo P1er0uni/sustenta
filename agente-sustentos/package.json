@@ -1,0 +1,17 @@
+{
+  "name": "agente-sustentos",
+  "private": true,
+  "type": "module",
+  "description": "Agente consultivo (OpenAI/GPT) que lee los sustentos de Sustenta y emite un veredicto con citas.",
+  "scripts": {
+    "analizar": "node src/cli.mjs",
+    "informe": "node src/informe-cli.mjs",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "mammoth": "^1.8.0",
+    "openai": "^5.23.2",
+    "xlsx": "^0.18.5"
+  }
+}

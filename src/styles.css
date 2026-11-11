@@ -1,0 +1,192 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+/*
+ * Sustenta — sistema de diseño corporativo (Claro Empresas).
+ * Todos los colores son tokens semánticos. Nunca uses colores literales
+ * en los componentes.
+ */
+
+@theme inline {
+  --font-sans: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-card: var(--surface);
+  --color-card-foreground: var(--foreground);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--border);
+  --color-ring: var(--accent);
+
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-soft: var(--accent-soft);
+
+  --color-secondary: var(--surface-muted);
+  --color-secondary-foreground: var(--foreground);
+  --color-muted: var(--surface-muted);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-destructive: var(--accent);
+  --color-destructive-foreground: var(--accent-foreground);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  --color-project-1: var(--project-1);
+  --color-project-1-soft: var(--project-1-soft);
+  --color-project-2: var(--project-2);
+  --color-project-2-soft: var(--project-2-soft);
+  --color-project-3: var(--project-3);
+  --color-project-3-soft: var(--project-3-soft);
+  --color-project-4: var(--project-4);
+  --color-project-4-soft: var(--project-4-soft);
+  --color-project-5: var(--project-5);
+  --color-project-5-soft: var(--project-5-soft);
+  --color-project-6: var(--project-6);
+  --color-project-6-soft: var(--project-6-soft);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-elevated: var(--sidebar-elevated);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-border: var(--sidebar-border);
+}
+
+:root {
+  --background: #f6f5f3;
+  --surface: #ffffff;
+  --surface-muted: #f0efec;
+  --border: #e4e2de;
+  --border-strong: #d3d0ca;
+
+  --foreground: #1b1e24;
+  --muted-foreground: #61656e;
+
+  --accent: #df3e3f;
+  --accent-foreground: #ffffff;
+  --accent-soft: #fbeaea;
+
+  --success: #0f6e56;
+  --success-soft: #e4f2ee;
+  --warning: #a9670c;
+  --warning-soft: #fbf0dc;
+  --info: #31506e;
+  --info-soft: #e8eef4;
+
+  --project-1: #356a8a;
+  --project-1-soft: #e6f0f5;
+  --project-2: #4d7463;
+  --project-2-soft: #e8f1ec;
+  --project-3: #78669a;
+  --project-3-soft: #eeeaf5;
+  --project-4: #8a6b35;
+  --project-4-soft: #f4eddf;
+  --project-5: #3f7478;
+  --project-5-soft: #e4f0f0;
+  --project-6: #76685a;
+  --project-6-soft: #f0ece7;
+
+  --sidebar: #171a1f;
+  --sidebar-elevated: #21252c;
+  --sidebar-foreground: #c6c8cc;
+  --sidebar-muted: #7d828b;
+  --sidebar-border: #2a2e35;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    letter-spacing: -0.01em;
+    font-weight: 600;
+  }
+}
+
+/* Cifras: toda cifra del sistema (horas, montos, fechas, documentos, %) */
+@utility num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.01em;
+}
+
+@utility card-surface {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+@utility field {
+  width: 100%;
+  background-color: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 0.5rem 0.625rem;
+  font-size: 13px;
+  color: var(--foreground);
+  outline: none;
+}
+
+@utility label-xs {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+input.field:focus,
+select.field:focus,
+textarea.field:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Ocultar la barra de desplazamiento del sidebar manteniendo el scroll */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
