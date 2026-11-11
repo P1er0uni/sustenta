@@ -151,6 +151,24 @@ npx vercel env add VITE_MS_CLIENT_ID production
 npx vercel env add VITE_MS_TENANT_ID production
 ```
 
+### Variable del agente IA (análisis de sustentos)
+
+El agente (`agente-sustentos/`) usa la API de OpenAI. En local lee la clave
+de `agente-sustentos/.env`, pero ese archivo no está en el repo: en Vercel
+configúrala como variable de entorno del proyecto (`process.env` tiene
+prioridad sobre el archivo):
+
+```sh
+npx vercel env add OPENAI_API_KEY production
+# Opcional — modelo distinto del por defecto (gpt-5.6):
+npx vercel env add OPENAI_MODEL production
+```
+
+Sin esta variable, el análisis con IA falla en producción (las reglas
+locales sí corren). La conexión a Supabase no requiere configuración: la
+URL y la clave anon (pública por diseño) van en el código
+(`src/integrations/sustenta/client.ts`).
+
 O desde el navegador:
 
 1. Entra a [vercel.com/dashboard](https://vercel.com/dashboard) → tu proyecto
