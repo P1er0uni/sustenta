@@ -2,6 +2,42 @@
 
 Vamos a construir **Sustenta**, una plataforma de control de horas y defensa tributaria para servicios intragrupo en Perú. Es una demo comercial de Claro Empresas para el cliente AC Corporativo del Perú S.A.C.
 
+## Inicio rápido (probar esta versión)
+
+Requisito único: **Node.js 20 o superior** (`node --version` debe responder).
+
+1. Clona el repo (o descarga el ZIP) y entra a la carpeta.
+2. Instala y arranca la plataforma:
+
+   ```sh
+   npm install
+   npm run dev
+   ```
+
+   Abre la URL que imprime Vite (`http://localhost:5173`). La plataforma funciona
+   completa contra el Supabase de demo. La integración Outlook/Teams queda en
+   modo demo mientras no configures `VITE_MS_CLIENT_ID` (opcional; ver la sección
+   "Conectar Outlook/Teams" más abajo).
+
+3. Para las funciones de IA (análisis de sustentos, informe por envío y base de
+   conocimiento), activa el agente — **lo único que tienes que añadir es una
+   clave de Gemini**:
+
+   1. Crea una clave gratis en [aistudio.google.com](https://aistudio.google.com)
+      → **Get API key** (la capa gratuita alcanza para probar).
+   2. En la carpeta `agente-sustentos/` ejecuta `npm install` (una sola vez).
+   3. Copia `agente-sustentos/.env.example` como `agente-sustentos/.env` y pega
+      tu clave en la línea `GEMINI_API_KEY=`.
+   4. Reinicia `npm run dev` si estaba corriendo.
+
+   Sin la clave, todo lo demás funciona igual: las funciones de IA se desactivan
+   solas con un mensaje claro y nunca rompen la app. Con la clave, el RAG de la
+   base de conocimiento usa el modo `gemini` (embeddings con esa misma clave),
+   que es el valor por defecto del `.env.example`.
+
+Los comandos del agente (análisis, informes en PDF, límites de uso) están en
+`agente-sustentos/LEEME.md`. El despliegue en Vercel, en `GUIA-DEPLOY.md`.
+
 ## Desarrollo con SDD (spec-driven development)
 
 Toda feature nueva se desarrolla con especificación primero. Antes de escribir código, crea una carpeta `specs/NNN-slug/` (numeración correlativa: la siguiente después de `specs/001-reuniones-outlook-teams/` es `002`) con tres archivos — usa `specs/_TEMPLATE/` como base:

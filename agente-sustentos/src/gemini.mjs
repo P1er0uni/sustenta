@@ -1,5 +1,16 @@
-import OpenAI from "openai";
 import { config, VERSION_PROMPT } from "./config.mjs";
+
+/**
+ * Capa de análisis IA con Gemini (Google AI Studio). Migra del anterior
+ * openai.mjs (2026-11-11): misma interfaz — consultarGemini (veredicto por
+ * registro, con los archivos adjuntos en línea) y consultarGeminiResumen
+ * (resumen ejecutivo del envío) — sobre la API nativa generateContent:
+ *   - PDFs e imágenes van como inline_data (Gemini los lee nativamente).
+ *   - La salida se fuerza al esquema con response_schema (JSON estructurado).
+ *   - Autenticación con la GEMINI_API_KEY (header x-goog-api-key).
+ */
+
+const API = "https://generativelanguage.googleapis.com/v1beta";
 
 const INSTRUCCION_SISTEMA = `Eres un revisor de registros de horas de un servicio intragrupo.
 MODO DEMOSTRACIÓN: el objetivo es mostrar el flujo de aprobación asistido por IA, no una fiscalización
@@ -46,27 +57,28 @@ REGLAS
 Responde solo con el JSON del esquema, en español.`;
 
 const comprobacion = {
-  type: "object",
+  type: "OBJECT",
   properties: {
-    resultado: { type: "string", enum: ["coincide", "no_coincide", "no_verificable"] },
-    explicacion: { type: "string" },
+    resultado: { type: "STRING", enum: ["coincide", "no_coincide", "no_verificable"] },
+    explicacion: { type: "STRING" },
   },
   required: ["resultado", "explicacion"],
-  additionalProperties: false,
 };
 
-// Esquema en formato JSON Schema estricto (structured outputs de OpenAI:
-// todos los campos en required y additionalProperties: false).
+// Esquema para la salida estructurada de Gemini (generation_config.response_schema):
+// subconjunto OpenAPI — type/enum/items/properties/required/description, con TODOS
+// los campos en required (así lo exige Gemini). Sin additionalProperties ni otras
+// claves de JSON Schema que la API no soporta.
 const ESQUEMA = {
-  type: "object",
+  type: "OBJECT",
   properties: {
-    veredicto: { type: "string", enum: ["sustenta", "sustenta_parcial", "no_sustenta", "ilegible"] },
-    confianza: { type: "string", enum: ["alta", "media", "baja"] },
-    resumen: { type: "string", description: "Resumen claro y detallado de qué hizo el colaborador durante las horas declaradas, según la evidencia adjunta. 3 a 6 frases." },
-    resumen_evidencia: { type: "string", description: "Resumen estructurado en bullets para el expediente: tareas concretas, documentos elaborados/revisados, resultados obtenidos." },
-    tipo_documento: { type: "string" },
+    veredicto: { type: "STRING", enum: ["sustenta", "sustenta_parcial", "no_sustenta", "ilegible"] },
+    confianza: { type: "STRING", enum: ["alta", "media", "baja"] },
+    resumen: { type: "STRING", description: "Resumen claro y detallado de qué hizo el colaborador durante las horas declaradas, según la evidencia adjunta. 3 a 6 frases." },
+    resumen_evidencia: { type: "STRING", description: "Resumen estructurado en bullets para el expediente: tareas concretas, documentos elaborados/revisados, resultados obtenidos." },
+    tipo_documento: { type: "STRING" },
     comprobaciones: {
-      type: "object",
+      type: "OBJECT",
       properties: {
         fecha: comprobacion,
         colaborador: comprobacion,
@@ -75,30 +87,26 @@ const ESQUEMA = {
         horas: comprobacion,
       },
       required: ["fecha", "colaborador", "proyecto_o_empresa", "actividad", "horas"],
-      additionalProperties: false,
     },
     citas: {
-      type: "array",
+      type: "ARRAY",
       items: {
-        type: "object",
-        properties: { archivo: { type: "string" }, texto: { type: "string" }, sirve_para: { type: "string" } },
+        type: "OBJECT",
+        properties: { archivo: { type: "STRING" }, texto: { type: "STRING" }, sirve_para: { type: "STRING" } },
         required: ["archivo", "texto", "sirve_para"],
-        additionalProperties: false,
       },
     },
     alertas: {
-      type: "array",
+      type: "ARRAY",
       items: {
-        type: "object",
-        properties: { codigo: { type: "string" }, detalle: { type: "string" } },
+        type: "OBJECT",
+        properties: { codigo: { type: "STRING" }, detalle: { type: "STRING" } },
         required: ["codigo", "detalle"],
-        additionalProperties: false,
       },
     },
-    evidencia_faltante: { type: "string" },
+    evidencia_faltante: { type: "STRING" },
   },
   required: ["veredicto", "confianza", "resumen", "resumen_evidencia", "tipo_documento", "comprobaciones", "citas", "alertas", "evidencia_faltante"],
-  additionalProperties: false,
 };
 
 function descripcionRegistro(r) {
@@ -117,24 +125,45 @@ function descripcionRegistro(r) {
   ].join("\n");
 }
 
-function construirContenido(registro, archivos) {
-  const contenido = [{ type: "input_text", text: descripcionRegistro(registro) }];
+/** Partes del mensaje para generateContent: texto + archivos nativos en línea. */
+function construirPartes(registro, archivos) {
+  const partes = [{ text: descripcionRegistro(registro) }];
   for (const a of archivos) {
-    contenido.push({ type: "input_text", text: `\n--- DOCUMENTO: ${a.nombre} (SHA-256 ${a.hash.slice(0, 16)}…) ---` });
+    partes.push({ text: `\n--- DOCUMENTO: ${a.nombre} (SHA-256 ${a.hash.slice(0, 16)}…) ---` });
     if (a.modo === "nativo") {
-      const dataUrl = `data:${a.mime};base64,${a.buffer.toString("base64")}`;
-      // PDFs van como archivo; imágenes (PNG/JPG) como imagen, ambos en línea.
-      contenido.push(
-        a.mime === "application/pdf"
-          ? { type: "input_file", filename: a.nombre, file_data: dataUrl }
-          : { type: "input_image", image_url: dataUrl },
-      );
+      // PDFs e imágenes van como inline_data: Gemini los lee nativamente.
+      partes.push({ inline_data: { mime_type: a.mime, data: a.buffer.toString("base64") } });
     } else {
-      contenido.push({ type: "input_text", text: a.texto });
+      partes.push({ text: a.texto });
     }
   }
-  contenido.push({ type: "input_text", text: "\nEmite el veredicto." });
-  return contenido;
+  partes.push({ text: "\nEmite el veredicto." });
+  return partes;
+}
+
+/**
+ * POST a la API de Gemini con la GEMINI_API_KEY. `metodo` es la ruta del
+ * endpoint sin la base (p. ej. "models/gemini-3.1-flash-lite:generateContent").
+ * Exportada: maas.mjs la reusa para los embeddings del RAG.
+ */
+export async function postGemini(metodo, cuerpo) {
+  const res = await fetch(`${API}/${metodo}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": config.apiKey },
+    body: JSON.stringify(cuerpo),
+  });
+  if (!res.ok) {
+    let detalle = "";
+    try {
+      detalle = (await res.json())?.error?.message ?? "";
+    } catch {
+      detalle = (await res.text().catch(() => "")).slice(0, 300);
+    }
+    const e = new Error(`Gemini respondió HTTP ${res.status}: ${detalle}`);
+    e.status = res.status;
+    throw e;
+  }
+  return res.json();
 }
 
 async function conReintentos(fn, intentos = 4) {
@@ -142,42 +171,64 @@ async function conReintentos(fn, intentos = 4) {
     try {
       return await fn();
     } catch (e) {
-      // Sin crédito o cuota agotada: reintentar no lo soluciona. Se avisa en claro.
-      if (e?.status === 429 && /quota|billing|exceeded your current quota/i.test(e?.message ?? "")) {
-        throw new Error(
-          "Cuota de OpenAI agotada o sin crédito en la cuenta. Revisa tu saldo y método de pago en " +
-            "platform.openai.com (Billing), o prueba otro modelo con --modelo <id>.",
-        );
-      }
-      const transitorio = [429, 500, 503, 504].includes(e?.status) || /overloaded|unavailable|fetch failed|timeout/i.test(e?.message ?? "");
+      // 429 de Gemini (RESOURCE_EXHAUSTED): en la capa gratuita suele ser el
+      // límite por minuto — reintentar con espera resuelve; si es el límite
+      // diario, se agotan los intentos y el mensaje de Google explica la causa.
+      const transitorio =
+        [429, 500, 503, 504].includes(e?.status) ||
+        /overloaded|unavailable|fetch failed|timeout|RESOURCE_EXHAUSTED/i.test(e?.message ?? "");
       if (!transitorio || i >= intentos) throw e;
       await new Promise((r) => setTimeout(r, 1500 * 2 ** (i - 1)));
     }
   }
 }
 
-/** Llama a OpenAI (GPT) y devuelve el veredicto parseado junto con la trazabilidad de la llamada. */
-export async function consultarOpenAI({ registro, archivos, modelo = config.modelo }) {
-  if (!config.apiKey) throw new Error("Falta OPENAI_API_KEY (agente-sustentos/.env).");
-  const cliente = new OpenAI({ apiKey: config.apiKey });
+/** Texto de la respuesta de generateContent (une las partes del candidato). */
+function textoDe(respuesta) {
+  const partes = respuesta?.candidates?.[0]?.content?.parts ?? [];
+  const texto = partes.map((p) => p?.text ?? "").join("").trim();
+  if (!texto) {
+    const motivo =
+      respuesta?.candidates?.[0]?.finishReason ??
+      respuesta?.promptFeedback?.blockReason ??
+      "respuesta sin contenido";
+    throw new Error(`Gemini no devolvió texto (${motivo}).`);
+  }
+  return texto;
+}
+
+/** Trazabilidad: usageMetadata de Gemini con la misma forma que registraba OpenAI. */
+function tokensDe(respuesta) {
+  const u = respuesta?.usageMetadata;
+  if (!u) return null;
+  return {
+    prompt_tokens: u.promptTokenCount ?? null,
+    completion_tokens: u.candidatesTokenCount ?? null,
+    total_tokens: u.totalTokenCount ?? null,
+  };
+}
+
+/** Llama a Gemini y devuelve el veredicto parseado junto con la trazabilidad de la llamada. */
+export async function consultarGemini({ registro, archivos, modelo = config.modelo }) {
+  if (!config.apiKey) throw new Error("Falta GEMINI_API_KEY (agente-sustentos/.env; créala en aistudio.google.com).");
   const respuesta = await conReintentos(() =>
-    cliente.responses.create({
-      model: modelo,
-      instructions: INSTRUCCION_SISTEMA,
-      input: [{ role: "user", content: construirContenido(registro, archivos) }],
-      // Salida obligatoriamente conforme al esquema (structured outputs).
-      text: { format: { type: "json_schema", name: "veredicto_sustento", strict: true, schema: ESQUEMA } },
+    postGemini(`models/${modelo}:generateContent`, {
+      system_instruction: { parts: [{ text: INSTRUCCION_SISTEMA }] },
+      contents: [{ role: "user", parts: construirPartes(registro, archivos) }],
+      // Salida obligatoriamente conforme al esquema (JSON estructurado).
+      generation_config: { response_mime_type: "application/json", response_schema: ESQUEMA },
     }),
   );
+  const texto = textoDe(respuesta);
   let veredicto;
   try {
-    veredicto = JSON.parse(respuesta.output_text);
+    veredicto = JSON.parse(texto);
   } catch {
-    throw new Error(`OpenAI devolvió una respuesta que no es JSON válido: ${String(respuesta.output_text).slice(0, 200)}`);
+    throw new Error(`Gemini devolvió una respuesta que no es JSON válido: ${texto.slice(0, 200)}`);
   }
   return {
     veredicto,
-    traza: { modelo, versionPrompt: VERSION_PROMPT, tokens: respuesta.usage ?? null },
+    traza: { modelo, versionPrompt: VERSION_PROMPT, tokens: tokensDe(respuesta) },
   };
 }
 
@@ -195,21 +246,24 @@ REGLAS
 4. En modo demo, si la mayoría de registros sustentan, recomienda aprobar; las alertas informativas
    no impiden aprobar.
 5. El análisis es consultivo: la decisión final es de la jefatura.
+6. Puede incluirse una sección "CONTEXTO DE REFERENCIA" con fragmentos de informes anteriores de la
+   base de conocimiento. Úsala SOLO como antecedente para el resumen (consistencia o recurrencia del
+   colaborador en envíos previos); nunca como evidencia del envío actual y sin inventar citas sobre
+   ella. Si no aporta nada, ignórala.
 
 Responde solo con el JSON del esquema, en español.`;
 
 const ESQUEMA_RESUMEN = {
-  type: "object",
+  type: "OBJECT",
   properties: {
-    resumen: { type: "string" },
-    recomendacion: { type: "string" },
-    accion: { type: "string", enum: ["aprobar", "aprobar_con_observaciones", "rechazar"] },
+    resumen: { type: "STRING" },
+    recomendacion: { type: "STRING" },
+    accion: { type: "STRING", enum: ["aprobar", "aprobar_con_observaciones", "rechazar"] },
   },
   required: ["resumen", "recomendacion", "accion"],
-  additionalProperties: false,
 };
 
-function descripcionEnvio(colaborador, fecha, resultados) {
+function descripcionEnvio(colaborador, fecha, resultados, contexto = []) {
   const lineas = [
     "ENVÍO DE REGISTROS DE HORAS A APROBACIÓN",
     `- Colaborador: ${colaborador}`,
@@ -242,32 +296,43 @@ function descripcionEnvio(colaborador, fecha, resultados) {
       for (const a of alertas) lineas.push(`    - [${a.severidad ?? "media"}] ${a.codigo}: ${a.detalle}`);
     }
   }
+  // RAG (spec 002): fragmentos de informes anteriores recuperados por similitud.
+  // Material de referencia para el resumen — nunca evidencia del envío.
+  if (Array.isArray(contexto) && contexto.length) {
+    lineas.push(
+      "",
+      "CONTEXTO DE REFERENCIA (fragmentos de informes anteriores; material de referencia, NO evidencia del envío):",
+    );
+    for (const c of contexto) {
+      lineas.push(`· [${c.fuente} · ${c.colaborador ?? ""} · ${c.fecha ?? ""}] ${String(c.texto ?? "").slice(0, 300)}`);
+    }
+  }
   return lineas.join("\n");
 }
 
 /**
  * Resumen ejecutivo del envío completo: un párrafo para la jefatura y una acción recomendada.
  * Una sola llamada, sin adjuntar documentos (solo los veredictos ya emitidos).
+ * `contexto` (opcional): fragmentos RAG de informes anteriores — material de referencia.
  */
-export async function consultarOpenAIResumen({ colaborador, fecha, resultados, modelo = config.modelo }) {
-  if (!config.apiKey) throw new Error("Falta OPENAI_API_KEY (agente-sustentos/.env).");
-  const cliente = new OpenAI({ apiKey: config.apiKey });
+export async function consultarGeminiResumen({ colaborador, fecha, resultados, modelo = config.modelo, contexto = [] }) {
+  if (!config.apiKey) throw new Error("Falta GEMINI_API_KEY (agente-sustentos/.env; créala en aistudio.google.com).");
   const respuesta = await conReintentos(() =>
-    cliente.responses.create({
-      model: modelo,
-      instructions: INSTRUCCION_SISTEMA_RESUMEN,
-      input: [{ role: "user", content: [{ type: "input_text", text: descripcionEnvio(colaborador, fecha, resultados) }] }],
-      text: { format: { type: "json_schema", name: "resumen_envio", strict: true, schema: ESQUEMA_RESUMEN } },
+    postGemini(`models/${modelo}:generateContent`, {
+      system_instruction: { parts: [{ text: INSTRUCCION_SISTEMA_RESUMEN }] },
+      contents: [{ role: "user", parts: [{ text: descripcionEnvio(colaborador, fecha, resultados, contexto) }] }],
+      generation_config: { response_mime_type: "application/json", response_schema: ESQUEMA_RESUMEN },
     }),
   );
+  const texto = textoDe(respuesta);
   let resumen;
   try {
-    resumen = JSON.parse(respuesta.output_text);
+    resumen = JSON.parse(texto);
   } catch {
-    throw new Error(`OpenAI devolvió una respuesta que no es JSON válido: ${String(respuesta.output_text).slice(0, 200)}`);
+    throw new Error(`Gemini devolvió una respuesta que no es JSON válido: ${texto.slice(0, 200)}`);
   }
   return {
     ...resumen,
-    traza: { modelo, versionPrompt: VERSION_PROMPT, tokens: respuesta.usage ?? null },
+    traza: { modelo, versionPrompt: VERSION_PROMPT, tokens: tokensDe(respuesta) },
   };
 }

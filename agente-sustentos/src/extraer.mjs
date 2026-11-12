@@ -61,7 +61,7 @@ async function pptxATexto(buffer) {
 /**
  * Lee un archivo de sustento y devuelve lo que necesita el agente:
  * hash, tipo, y texto extraído (xlsx/docx/pptx) o bytes para enviar tal cual
- * a la IA de OpenAI (pdf/imágenes).
+ * a la IA de Gemini (pdf/imágenes).
  */
 export async function extraer(ruta) {
   const buffer = await readFile(ruta);

@@ -233,6 +233,34 @@ async function encontrarPdfLote(publicDir: string, colaborador: string, fecha: s
 }
 
 /**
+ * Lee public/informes/manifest.json y devuelve la entrada completa del informe
+ * consolidado (tipo "lote") del colaborador y día indicados — la usa el indexado
+ * RAG para encontrar el HTML publicado del envío.
+ */
+async function entradaLoteManifest(
+  publicDir: string,
+  colaborador: string,
+  fecha: string,
+): Promise<ManifestEntrada | null> {
+  const manifestPath = join(publicDir, "informes", "manifest.json");
+  try {
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    if (!Array.isArray(manifest)) return null;
+    const nombreBuscado = sinTildes(colaborador);
+    return (
+      (manifest as ManifestEntrada[]).find(
+        (m) =>
+          m.tipo === "lote" &&
+          m.fecha === fecha &&
+          sinTildes(m.colaborador ?? "").split(/\s+/).every((p: string) => nombreBuscado.includes(p)),
+      ) ?? null
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Ejecuta el agente de sustentos para un único registro (el de la fila donde
  * se hizo clic). Genera el PDF, lo publica en public/informes/ con su manifest,
  * y devuelve el nombre del archivo PDF para que el frontend lo abra.
@@ -374,8 +402,15 @@ export const analizarEnvio = createServerFn({ method: "POST" })
         );
 
         // 2. Analizar (reglas + IA) y armar el informe consolidado del envío.
+        //    Con el token del usuario, el pipeline recupera el contexto RAG
+        //    (informes anteriores) para el resumen ejecutivo (spec 002).
         const { analizarEnvioLote } = await import("../../agente-sustentos/src/lote.mjs");
-        const out = await analizarEnvioLote({ colaborador: data.colaborador, fecha: fechaEnvio, casos });
+        const out = await analizarEnvioLote({
+          colaborador: data.colaborador,
+          fecha: fechaEnvio,
+          casos,
+          token: data.token,
+        });
 
         // 3. Publicar en Storage: HTML + companion .json con la entrada del
         //    manifest. Nombre único por timestamp — el bucket no permite
@@ -386,6 +421,27 @@ export const analizarEnvio = createServerFn({ method: "POST" })
         const entrada = { ...out.entrada, archivo: `${base}.pdf`, htmlArchivo: `${base}.html` };
         await subirStorage(data.token, entrada.htmlArchivo, Buffer.from(out.html, "utf8"));
         await subirStorage(data.token, `${base}.json`, Buffer.from(JSON.stringify(entrada), "utf8"));
+
+        // 4. RAG (spec 002): indexar el informe generado en la base de
+        //    conocimiento. Mejor esfuerzo — el informe ya está publicado; si
+        //    falla (sin MaaS, sin token, error de red) solo queda en el log.
+        try {
+          const { indexarInforme } = await import("../../agente-sustentos/src/rag.mjs");
+          const rag = await indexarInforme({
+            html: out.html,
+            colaborador: data.colaborador,
+            fecha: fechaEnvio,
+            fuente: entrada.htmlArchivo,
+            token: data.token,
+          });
+          console.log(
+            rag.ok
+              ? `[analizarEnvio] RAG: ${rag.fragmentos} fragmento(s) indexados (${entrada.htmlArchivo})`
+              : `[analizarEnvio] RAG omitido: ${rag.motivo}`,
+          );
+        } catch (e) {
+          console.error("[analizarEnvio] RAG (omitido):", e);
+        }
         return { ok: true, salida: out.salida, pdfArchivo: entrada.archivo };
       }
 
@@ -438,10 +494,11 @@ export const analizarEnvio = createServerFn({ method: "POST" })
       // 2. Ejecutar el agente con el flag --lote (informe consolidado único).
       // Node directo (sin npm) y --lote-sin-pdf: el PDF se renderiza al aprobar,
       // no aquí — el HTML que abre el editor es lo único que se necesita ya.
+      // SUPABASE_TOKEN: el CLI lo usa para recuperar el contexto RAG (spec 002).
       const resultado = await new Promise<{ ok: boolean; salida: string }>((resolverFn) => {
         const proc = spawn(process.execPath, [join("src", "cli.mjs"), ...casosArg, "--lote", "--lote-sin-pdf"], {
           cwd: agenteDir,
-          env: { ...process.env, FORCE_COLOR: "0" },
+          env: { ...process.env, FORCE_COLOR: "0", SUPABASE_TOKEN: data.token ?? "" },
         });
         let salida = "";
         proc.stdout.on("data", (d: Buffer) => (salida += d.toString()));
@@ -459,6 +516,33 @@ export const analizarEnvio = createServerFn({ method: "POST" })
       // 3. Leer el manifest y devolver el PDF del envío (un informe por colaborador+día).
       const fechaEnvio = data.registros[0]?.fecha ?? "";
       const pdfArchivo = await encontrarPdfLote(publicDir, data.colaborador, fechaEnvio);
+
+      // 4. RAG (spec 002): indexar el informe generado en la base de
+      //    conocimiento. Mejor esfuerzo — el informe ya está publicado; si
+      //    falla (sin MaaS, sin tabla, error de red) solo queda en el log.
+      try {
+        const entradaLote = await entradaLoteManifest(publicDir, data.colaborador, fechaEnvio);
+        if (entradaLote?.htmlArchivo) {
+          const html = await readFile(join(publicDir, "informes", entradaLote.htmlArchivo), "utf8");
+          const { indexarInforme } = await import("../../agente-sustentos/src/rag.mjs");
+          const rag = await indexarInforme({
+            html,
+            colaborador: data.colaborador,
+            fecha: fechaEnvio,
+            fuente: entradaLote.htmlArchivo,
+            token: data.token,
+          });
+          console.log(
+            rag.ok
+              ? `[analizarEnvio] RAG: ${rag.fragmentos} fragmento(s) indexados (${entradaLote.htmlArchivo})`
+              : `[analizarEnvio] RAG omitido: ${rag.motivo}`,
+          );
+        } else {
+          console.log("[analizarEnvio] RAG omitido: no se encontró el HTML del informe en el manifest.");
+        }
+      } catch (e) {
+        console.error("[analizarEnvio] RAG (omitido):", e);
+      }
       return { ok: true, salida: resultado.salida, pdfArchivo: pdfArchivo ?? undefined };
     } catch (e) {
       console.error("[analizarEnvio] Error:", e);

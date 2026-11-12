@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AdminBaseConocimientoRouteImport } from './routes/admin.base-conocimiento'
 import { Route as AdminCatalogosRouteImport } from './routes/admin.catalogos'
 import { Route as AdminColaboradoresRouteImport } from './routes/admin.colaboradores'
 import { Route as AdminCostosRouteImport } from './routes/admin.costos'
@@ -40,6 +41,11 @@ const IndexRoute = IndexRouteImport.update({
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminBaseConocimientoRoute = AdminBaseConocimientoRouteImport.update({
+  id: '/admin/base-conocimiento',
+  path: '/admin/base-conocimiento',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminCatalogosRoute = AdminCatalogosRouteImport.update({
@@ -147,6 +153,7 @@ const AdminDefenseFileIdDocumentoRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/admin/base-conocimiento': typeof AdminBaseConocimientoRoute
   '/admin/catalogos': typeof AdminCatalogosRoute
   '/admin/colaboradores': typeof AdminColaboradoresRoute
   '/admin/costos': typeof AdminCostosRoute
@@ -171,6 +178,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/admin/base-conocimiento': typeof AdminBaseConocimientoRoute
   '/admin/catalogos': typeof AdminCatalogosRoute
   '/admin/colaboradores': typeof AdminColaboradoresRoute
   '/admin/costos': typeof AdminCostosRoute
@@ -195,6 +203,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/admin/base-conocimiento': typeof AdminBaseConocimientoRoute
   '/admin/catalogos': typeof AdminCatalogosRoute
   '/admin/colaboradores': typeof AdminColaboradoresRoute
   '/admin/costos': typeof AdminCostosRoute
@@ -221,6 +230,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/admin/base-conocimiento'
     | '/admin/catalogos'
     | '/admin/colaboradores'
     | '/admin/costos'
@@ -245,6 +255,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/admin/base-conocimiento'
     | '/admin/catalogos'
     | '/admin/colaboradores'
     | '/admin/costos'
@@ -268,6 +279,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/auth'
+    | '/admin/base-conocimiento'
     | '/admin/catalogos'
     | '/admin/colaboradores'
     | '/admin/costos'
@@ -293,6 +305,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
+  AdminBaseConocimientoRoute: typeof AdminBaseConocimientoRoute
   AdminCatalogosRoute: typeof AdminCatalogosRoute
   AdminColaboradoresRoute: typeof AdminColaboradoresRoute
   AdminCostosRoute: typeof AdminCostosRoute
@@ -327,6 +340,13 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/base-conocimiento': {
+      id: '/admin/base-conocimiento'
+      path: '/admin/base-conocimiento'
+      fullPath: '/admin/base-conocimiento'
+      preLoaderRoute: typeof AdminBaseConocimientoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/catalogos': {
@@ -488,6 +508,7 @@ const AdminDefenseFileRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
+  AdminBaseConocimientoRoute: AdminBaseConocimientoRoute,
   AdminCatalogosRoute: AdminCatalogosRoute,
   AdminColaboradoresRoute: AdminColaboradoresRoute,
   AdminCostosRoute: AdminCostosRoute,

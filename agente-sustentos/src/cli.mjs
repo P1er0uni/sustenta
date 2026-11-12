@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { analizarRegistro } from "./analizar.mjs";
 import { extraer } from "./extraer.mjs";
 import { generarInforme, generarInformeLote } from "./informe.mjs";
-import { consultarOpenAIResumen } from "./openai.mjs";
+import { consultarGeminiResumen } from "./gemini.mjs";
+import { recuperarContextoEnvio } from "./rag.mjs";
 
 const USO = `Uso: npm run analizar -- <caso.json> [<caso2.json> ...] [--sin-ia] [--sin-pdf] [--lote] [--lote-sin-pdf] [--modelo <id>]
 
@@ -101,10 +102,23 @@ if (!flag("--sin-pdf")) {
     // La unidad del envío es el DÍA de trabajo (un informe por colaborador+día).
     const colaborador = cargados[0]?.caso.registro.colaborador ?? "Colaborador";
     const fecha = cargados[0]?.caso.registro.fecha ?? "";
+    // RAG (spec 002): la plataforma pasa el token de Supabase del usuario por
+    // env (SUPABASE_TOKEN) para recuperar informes anteriores. Sin token o sin
+    // MaaS configurado, el contexto queda vacío y el informe sale igual.
+    const tokenRag = process.env.SUPABASE_TOKEN || "";
+    const contexto = tokenRag
+      ? await recuperarContextoEnvio({
+          colaborador,
+          fecha,
+          registros: cargados.map((c) => c.caso.registro),
+          token: tokenRag,
+        })
+      : [];
+    if (contexto.length) linea(`\nContexto RAG: ${contexto.length} fragmento(s) de informes anteriores`);
     let resumen = null;
     if (!flag("--sin-ia") && resultados.some((r) => r.ia)) {
       try {
-        resumen = await consultarOpenAIResumen({ colaborador, fecha, resultados, modelo: valor("--modelo") });
+        resumen = await consultarGeminiResumen({ colaborador, fecha, resultados, modelo: valor("--modelo"), contexto });
         linea(`\nResumen ejecutivo: ${resumen.resumen}`);
         linea(`Recomendación (${resumen.accion}): ${resumen.recomendacion}`);
       } catch (e) {
@@ -116,6 +130,7 @@ if (!flag("--sin-pdf")) {
       fecha,
       resultados,
       resumen,
+      contexto,
       carpeta: informes,
       sinPdf: flag("--lote-sin-pdf"),
     });

@@ -17,6 +17,7 @@ import {
   Building2,
   UserCog,
   BookMarked,
+  Brain,
   type LucideIcon,
 } from "lucide-react";
 
@@ -92,8 +93,14 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     id: "administracion",
     label: "Administración",
-    roles: ["administracion", "finanzas", "tributaria"],
+    roles: ["jefatura", "administracion", "finanzas", "tributaria"],
     items: [
+      {
+        label: "Base de conocimiento",
+        to: "/admin/base-conocimiento",
+        icon: Brain,
+        roles: ["jefatura", "administracion"],
+      },
       {
         label: "Colaboradores",
         to: "/admin/colaboradores",

@@ -2,7 +2,7 @@
   "name": "agente-sustentos",
   "private": true,
   "type": "module",
-  "description": "Agente consultivo (OpenAI/GPT) que lee los sustentos de Sustenta y emite un veredicto con citas.",
+  "description": "Agente consultivo (Gemini) que lee los sustentos de Sustenta y emite un veredicto con citas.",
   "scripts": {
     "analizar": "node src/cli.mjs",
     "informe": "node src/informe-cli.mjs",

@@ -1,6 +1,6 @@
 import { extraer } from "./extraer.mjs";
 import { evaluarReglas } from "./reglas.mjs";
-import { consultarOpenAI } from "./openai.mjs";
+import { consultarGemini } from "./gemini.mjs";
 import { verificarCitas } from "./citas.mjs";
 
 const ORDEN = { sustenta: 0, sustenta_parcial: 1, ilegible: 2, no_sustenta: 3 };
@@ -8,7 +8,7 @@ const peor = (a, b) => (ORDEN[a] >= ORDEN[b] ? a : b);
 
 /**
  * Analiza un registro con sus archivos de sustento.
- * Combina reglas deterministas + IA (OpenAI/GPT). El resultado es consultivo: no aprueba ni modifica nada.
+ * Combina reglas deterministas + IA (Gemini). El resultado es consultivo: no aprueba ni modifica nada.
  */
 export async function analizarRegistro({ registro, rutas, otrosHashes = [], modelo, sinIA = false }) {
   const archivos = [];
@@ -21,7 +21,7 @@ export async function analizarRegistro({ registro, rutas, otrosHashes = [], mode
   let ia = null;
   const hashAlterado = alertasReglas.some((a) => a.codigo === "HASH_ALTERADO");
   if (!sinIA && !hashAlterado) {
-    const { veredicto, traza } = await consultarOpenAI({ registro, archivos, modelo });
+    const { veredicto, traza } = await consultarGemini({ registro, archivos, modelo });
     ia = { ...veredicto, citas: verificarCitas(veredicto.citas ?? [], archivos), traza };
     // Cita no encontrada = descartada y reportada, nunca se muestra como si fuera del documento.
     const inventadas = ia.citas.filter((c) => c.verificada === "no_encontrada");

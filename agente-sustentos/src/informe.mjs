@@ -334,7 +334,7 @@ export async function generarInforme({ registro, resultado, carpeta }) {
  * detalle por registro y alertas consolidadas. Pensado para que la jefatura lea
  * un solo documento en lugar de revisar registro por registro.
  */
-export function construirHtmlLote({ colaborador, fecha, resultados, resumen, tamanoFuente = FUENTE_INICIAL }) {
+export function construirHtmlLote({ colaborador, fecha, resultados, resumen, contexto, tamanoFuente = FUENTE_INICIAL }) {
   const global = veredictoGlobalDe(resultados);
   const v = VEREDICTOS[global.veredicto] ?? VEREDICTOS.sin_analisis_ia;
   const alertasTodas = resultados.flatMap((r) => [
@@ -345,6 +345,21 @@ export function construirHtmlLote({ colaborador, fecha, resultados, resumen, tam
   const accion = ACCION[res.accion] ?? ACCION.aprobar_con_observaciones;
   const totalHoras = resultados.reduce((s, r) => s + Number(r.registro.horas ?? 0), 0);
   const generado = new Date().toLocaleString("es-PE", { dateStyle: "long", timeStyle: "short" });
+
+  // RAG (spec 002): fragmentos de informes anteriores que informaron el resumen.
+  // Trazabilidad — mismo espíritu que las citas verificadas: se muestra qué se consultó.
+  const contextoHtml = Array.isArray(contexto) && contexto.length
+    ? `<h2>Contexto consultado (base de conocimiento)</h2>
+<p><small>Fragmentos de informes anteriores recuperados por similitud semántica para informar el resumen ejecutivo. No son evidencia de este envío.</small></p>
+<table class="cols"><tr><th>Informe</th><th>Colaborador</th><th>Fecha</th><th>Fragmento</th><th style="width:9%">Similitud</th></tr>
+${contexto
+  .map((c) => {
+    const texto = String(c.texto ?? "");
+    return `<tr><td>${esc(sinUuid(c.fuente ?? ""))}</td><td>${esc(c.colaborador ?? "")}</td><td class="num">${esc(c.fecha ?? "")}</td><td>${esc(texto.slice(0, 220))}${texto.length > 220 ? "…" : ""}</td><td class="num">${Math.round((Number(c.similitud) || 0) * 100)}%</td></tr>`;
+  })
+  .join("\n")}
+</table>`
+    : "";
 
   const filaResumen = (r) => {
     const rv = VEREDICTOS[r.veredicto] ?? VEREDICTOS.sin_analisis_ia;
@@ -403,6 +418,8 @@ ${r.ia?.citas?.length ? r.ia.citas.map((c) => `<blockquote>“${esc(c.texto)}”
   <b style="color:${accion.c}"${attrOpciones(OPCIONES_ACCION)}>${accion.t}</b>
   <p style="margin:6px 0 0">${esc(res.recomendacion)}</p>
 </div>
+
+${contextoHtml}
 
 <h2>Envío revisado</h2>
 <table>
@@ -495,7 +512,7 @@ async function publicarLoteEnPlataforma({ colaborador, fecha, resultados, veredi
  * Con sinPdf publica solo el HTML + manifest (la plataforma renderiza el PDF al
  * aprobar): evita lanzar Chrome para un PDF que luego se descarta al editar.
  */
-export async function generarInformeLote({ colaborador, fecha, resultados, resumen, carpeta, sinPdf = false }) {
+export async function generarInformeLote({ colaborador, fecha, resultados, resumen, contexto, carpeta, sinPdf = false }) {
   await mkdir(carpeta, { recursive: true });
   const slug = String(colaborador)
     .normalize("NFD")
@@ -506,7 +523,7 @@ export async function generarInformeLote({ colaborador, fecha, resultados, resum
   const base = join(carpeta, `informe-envio-${slug || "colaborador"}-${fecha}`);
   const rutaHtml = `${base}.html`;
   const rutaPdf = `${base}.pdf`;
-  await writeFile(rutaHtml, construirHtmlLote({ colaborador, fecha, resultados, resumen }), "utf8");
+  await writeFile(rutaHtml, construirHtmlLote({ colaborador, fecha, resultados, resumen, contexto }), "utf8");
 
   if (sinPdf) {
     const global = veredictoGlobalDe(resultados);
@@ -529,7 +546,7 @@ export async function generarInformeLote({ colaborador, fecha, resultados, resum
   const perfil = await mkdtemp(join(tmpdir(), "informe-perfil-"));
   try {
     while (tamanoFuente >= FUENTE_MINIMA) {
-      await writeFile(rutaHtml, construirHtmlLote({ colaborador, fecha, resultados, resumen, tamanoFuente }), "utf8");
+      await writeFile(rutaHtml, construirHtmlLote({ colaborador, fecha, resultados, resumen, contexto, tamanoFuente }), "utf8");
       await htmlAPdf(navegador, rutaHtml, rutaPdf, perfil);
       if (!existsSync(rutaPdf)) throw new Error("El navegador terminó sin generar el PDF.");
       paginas = contarPaginasPdf(rutaPdf);
