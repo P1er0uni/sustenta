@@ -119,10 +119,19 @@ function cadenaDeModelos(modelo) {
   return [m, ...defecto.filter((x) => x !== m)];
 }
 
+/** ¿El error es un timeout? En la redundancia se trata distinto: un timeout
+ *  ya quemó el tiempo del intento, así que reintentar el mismo modelo solo
+ *  duplica la espera — se cae directo al siguiente de la cadena. */
+function esTimeout(e) {
+  return /timed?[ _]?out/i.test(String(e?.message ?? "")) || e?.code === "ETIMEDOUT";
+}
+
 /** Recorre la cadena de redundancia: cada modelo se intenta
  *  INTENTOS_POR_MODELO veces; si no está disponible se cae al siguiente
- *  dejando el aviso en la bitácora. Devuelve { resultado, modelo } — el modelo
- *  que respondió es el que va a la trazabilidad del informe. */
+ *  dejando el aviso en la bitácora. Excepción: los TIMEOUTS no se reintentan
+ *  (el intento ya costó el timeout completo) — caen directo al siguiente.
+ *  Devuelve { resultado, modelo } — el modelo que respondió es el que va a la
+ *  trazabilidad del informe. */
 export async function conRedundancia({ modelo, llamar }) {
   const cadena = cadenaDeModelos(modelo);
   for (let i = 0; i < cadena.length; i++) {
@@ -133,7 +142,9 @@ export async function conRedundancia({ modelo, llamar }) {
         return { resultado: await llamar(m), modelo: m };
       } catch (e) {
         if (!esErrorDeDisponibilidad(e)) throw e;
-        if (intento < INTENTOS_POR_MODELO) continue; // reintenta el mismo modelo
+        const ultimoIntento = intento === INTENTOS_POR_MODELO;
+        // Timeout con a dónde caer: no reintentar — directo al siguiente.
+        if (!ultimoIntento && !(esTimeout(e) && siguiente)) continue;
         if (!siguiente) throw e; // cadena agotada: el error original
         const motivo = describirError(e);
         CAMBIOS_DE_MODELO.push({ de: m, a: siguiente, motivo });
@@ -277,14 +288,14 @@ function clienteMaas() {
       "Falta configurar el MaaS de Huawei: define MAAS_API_KEY y MAAS_BASE_URL (el access point del despliegue MaaS) en agente-sustentos/.env.",
     );
   }
-  // Timeout y reintento cortos: la REDUNDANCIA de modelos (conRedundancia)
-  // es quien decide cuándo un modelo está caído y cae al siguiente — un
-  // cliente que reintenta solo durante minutos entregaría el aviso demasiado tarde.
+  // Timeout corto y SIN reintentos del SDK: la REDUNDANCIA de modelos
+  // (conRedundancia) es quien decide cuándo reintententar y cuándo caer al
+  // siguiente — un cliente que reintenta solo duplicaría cada espera.
   return new OpenAI({
     apiKey: config.maas.apiKey,
     baseURL: config.maas.baseUrl,
     timeout: 180000,
-    maxRetries: 1,
+    maxRetries: 0,
   });
 }
 

@@ -166,6 +166,23 @@ test("cadena de redundancia: 2 intentos por modelo, luego cae al siguiente y avi
   assert.equal(avisosDeCambioDeModelo().length, 1);
 });
 
+test("cadena de redundancia: un timeout no se reintenta — cae directo al siguiente", async () => {
+  limpiarCambiosDeModelo();
+  const llamadas = [];
+  const { modelo } = await conRedundancia({
+    modelo: "lento-falso",
+    llamar: async (m) => {
+      llamadas.push(m);
+      if (m === "lento-falso") throw new Error("Request timed out.");
+      return "ok";
+    },
+  });
+  // El timeout ya quemó el tiempo del intento: 1 sola llamada al primario.
+  assert.equal(llamadas.filter((m) => m === "lento-falso").length, 1);
+  assert.equal(modelo, llamadas[1]);
+  assert.match(avisosDeCambioDeModelo()[0], /lento-falso no disponible \(Request timed out\./);
+});
+
 test("cadena de redundancia: errores de contenido (400) y credenciales (401) no cambian de modelo", async () => {
   limpiarCambiosDeModelo();
   const llamadas = [];

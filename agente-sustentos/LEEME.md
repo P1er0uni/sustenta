@@ -61,9 +61,10 @@ MAAS_ANALISIS_MODEL=glm-5.3
 **Redundancia de modelos.** El análisis usa la cadena `glm-5.3 → glm-5.2 → deepseek-v4.1-flash`:
 cada modelo se intenta **2 veces** y, si no está disponible (cuota agotada, servicio caído, modelo
 inexistente), se cae al siguiente dejando un aviso — "Cambio de modelo: …" en la terminal y una
-notificación en la plataforma. Solo los errores de *disponibilidad* cambian de modelo; los de
-contenido (400/422) se degradan el contenido y los de credenciales (401/403) no los arregla ningún
-modelo. `MAAS_MODELOS` sobreescribe la cadena completa, separada por comas:
+notificación en la plataforma. Los **timeouts no se reintentan** (el intento ya costó los 3 minutos
+del timeout): caen directo al siguiente modelo. Solo los errores de *disponibilidad* cambian de
+modelo; los de contenido (400/422) se degradan el contenido y los de credenciales (401/403) no los
+arregla ningún modelo. `MAAS_MODELOS` sobreescribe la cadena completa, separada por comas:
 
 ```
 MAAS_MODELOS=glm-5.3,glm-5.2,deepseek-v4.1-flash

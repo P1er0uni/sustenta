@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { spawn, execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readdir, readFile, writeFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { readdir, readFile, writeFile, mkdir, mkdtemp, rm, appendFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join, basename } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -22,6 +22,102 @@ interface AnalizarResultado {
 }
 
 const sinTildes = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/** Entorno mínimo conocido-bueno para lanzar el agente: si el crash nativo lo
+ *  causa algo heredado del entorno del dev server (variables de gestores de
+ *  versiones, hooks del antivirus que leen el entorno), el agente arranca
+ *  igual con esto. Solo variables del sistema que node necesita de verdad. */
+function entornoMinimo(extra: Record<string, string>): Record<string, string> {
+  const claves = [
+    "PATH", "SystemRoot", "SystemDrive", "ComSpec", "TEMP", "TMP",
+    "USERNAME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA",
+    "LOCALAPPDATA", "PROGRAMDATA", "ProgramFiles", "OS", "PATHEXT",
+  ];
+  const env: Record<string, string> = {};
+  for (const k of claves) if (process.env[k] !== undefined) env[k] = process.env[k] as string;
+  return { ...env, FORCE_COLOR: "0", ...extra };
+}
+
+/** Deja rastro del crash nativo en crash-diagnostico.log (raíz del proyecto):
+ *  qué se intentó, con qué entorno y qué node. Sin valores de variables —
+ *  solo nombres y tamaños, para no filtrar nada. */
+async function diagnosticarCrash(
+  etiqueta: string,
+  code: number,
+  args: string[],
+  env: Record<string, string>,
+): Promise<void> {
+  try {
+    const linea = [
+      `[${new Date().toISOString()}] intento=${etiqueta} exit=0x${code.toString(16)}`,
+      `  execPath=${process.execPath} node=${process.version} cwd=${process.cwd()}`,
+      `  args=${args.join(" ")}`,
+      `  env(${Object.keys(env).length}): ${Object.entries(env).map(([k, v]) => `${k}(${v.length})`).join(" ")}`,
+    ].join("\n");
+    await appendFile(resolve(process.cwd(), "crash-diagnostico.log"), linea + "\n", "utf8");
+  } catch {
+    /* el diagnóstico es mejor esfuerzo */
+  }
+}
+
+/** Ejecuta el CLI del agente (node directo, sin npm) y recoge su salida.
+ *
+ *  Si el proceso muere con un CRASH NATIVO de Windows — código de salida
+ *  NTSTATUS (>= 0xC0000000, p. ej. 3221225794 = 0xC0000142 "DLL init failed")
+ *  — se reintenta con estrategias progresivamente más aisladas: el proceso no
+ *  llegó a ejecutar nada del agente, así que reintentar es seguro y no
+ *  duplica análisis. Cada caída se registra en crash-diagnostico.log. */
+async function correrAgente(
+  agenteDir: string,
+  args: string[],
+  envExtra: Record<string, string> = {},
+): Promise<{ ok: boolean; salida: string }> {
+  const CRASH_NATIVO = 0xc0000000; // códigos NTSTATUS de Windows (fatal)
+  const intentos: {
+    etiqueta: string;
+    env: Record<string, string>;
+    opciones?: { detached?: boolean; windowsHide?: boolean };
+  }[] = [
+    { etiqueta: "env-heredado", env: { ...process.env, FORCE_COLOR: "0", ...envExtra } },
+    { etiqueta: "env-minimo", env: entornoMinimo(envExtra) },
+    // Consola nueva y aislada: si el crash es de la inicialización de las
+    // DLLs de consola/escritorio, el proceso desacoplado arranca igual.
+    {
+      etiqueta: "env-minimo-desacoplado",
+      env: entornoMinimo(envExtra),
+      opciones: { detached: true, windowsHide: true },
+    },
+  ];
+  let ultimoCrash: number | null = null;
+  for (const intento of intentos) {
+    const r = await new Promise<{ code: number | null; salida: string }>((resolverFn) => {
+      const proc = spawn(process.execPath, [join("src", "cli.mjs"), ...args], {
+        cwd: agenteDir,
+        env: intento.env,
+        ...(intento.opciones ?? {}),
+      });
+      let salida = "";
+      proc.stdout.on("data", (d: Buffer) => (salida += d.toString()));
+      proc.stderr.on("data", (d: Buffer) => (salida += d.toString()));
+      proc.on("error", (err) => resolverFn({ code: -1, salida: `No se pudo lanzar el agente: ${err.message}` }));
+      proc.on("close", (code) => resolverFn({ code, salida }));
+    });
+    const nativo = r.code !== null && r.code >= CRASH_NATIVO;
+    if (!nativo) {
+      return {
+        ok: r.code === 0,
+        salida: r.salida || (r.code === 0 ? "Análisis completado." : `Exit code ${r.code}`),
+      };
+    }
+    ultimoCrash = r.code;
+    console.error(`[agente] Crash nativo 0x${(r.code as number).toString(16)} con ${intento.etiqueta} (ver crash-diagnostico.log)`);
+    await diagnosticarCrash(intento.etiqueta, r.code as number, args, intento.env);
+  }
+  return {
+    ok: false,
+    salida: `El proceso del agente no pudo iniciarse en Windows (crash nativo 0x${(ultimoCrash as number).toString(16)} en los 3 intentos — detalles en crash-diagnostico.log en la raíz del proyecto; suele causarlo el antivirus). Reinicia el dev server y vuelve a intentar.`,
+  };
+}
 
 // ─── Informes IA en Vercel ───────────────────────────────────────────────────
 // En el serverless el filesystem es de solo lectura y no hay Chrome: los
@@ -285,27 +381,7 @@ export const analizarCasos = createServerFn()
     }
 
     // 2. Ejecutar el agente solo para ese caso (node directo: sin overhead de npm)
-    const resultado = await new Promise<{ ok: boolean; salida: string }>((resolverFn) => {
-      const proc = spawn(process.execPath, [join("src", "cli.mjs"), `casos/${casoArchivo}`], {
-        cwd: agenteDir,
-        env: { ...process.env, FORCE_COLOR: "0" },
-      });
-
-      let salida = "";
-      proc.stdout.on("data", (d: Buffer) => (salida += d.toString()));
-      proc.stderr.on("data", (d: Buffer) => (salida += d.toString()));
-
-      proc.on("error", (err) => {
-        resolverFn({ ok: false, salida: `No se pudo lanzar npm: ${err.message}` });
-      });
-
-      proc.on("close", (code) => {
-        resolverFn({
-          ok: code === 0,
-          salida: salida || (code === 0 ? "Análisis completado." : `Exit code ${code}`),
-        });
-      });
-    });
+    const resultado = await correrAgente(agenteDir, [`casos/${casoArchivo}`]);
 
     if (!resultado.ok) {
       return { ok: false, salida: resultado.salida };
@@ -498,21 +574,8 @@ export const analizarEnvio = createServerFn({ method: "POST" })
       // Node directo (sin npm) y --lote-sin-pdf: el PDF se renderiza al aprobar,
       // no aquí — el HTML que abre el editor es lo único que se necesita ya.
       // SUPABASE_TOKEN: el CLI lo usa para recuperar el contexto RAG (spec 002).
-      const resultado = await new Promise<{ ok: boolean; salida: string }>((resolverFn) => {
-        const proc = spawn(process.execPath, [join("src", "cli.mjs"), ...casosArg, "--lote", "--lote-sin-pdf"], {
-          cwd: agenteDir,
-          env: { ...process.env, FORCE_COLOR: "0", SUPABASE_TOKEN: data.token ?? "" },
-        });
-        let salida = "";
-        proc.stdout.on("data", (d: Buffer) => (salida += d.toString()));
-        proc.stderr.on("data", (d: Buffer) => (salida += d.toString()));
-        proc.on("error", (err) => resolverFn({ ok: false, salida: `No se pudo lanzar npm: ${err.message}` }));
-        proc.on("close", (code) =>
-          resolverFn({
-            ok: code === 0,
-            salida: salida || (code === 0 ? "Análisis completado." : `Exit code ${code}`),
-          }),
-        );
+      const resultado = await correrAgente(agenteDir, [...casosArg, "--lote", "--lote-sin-pdf"], {
+        SUPABASE_TOKEN: data.token ?? "",
       });
       if (!resultado.ok) return { ok: false, salida: resultado.salida };
       // Redundancia del MaaS: el CLI imprime los avisos de cambio de modelo
