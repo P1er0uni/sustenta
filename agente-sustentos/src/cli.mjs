@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { analizarRegistro } from "./analizar.mjs";
 import { extraer } from "./extraer.mjs";
 import { generarInforme, generarInformeLote } from "./informe.mjs";
-import { consultarGeminiResumen } from "./gemini.mjs";
+import { consultarAnalistaResumen } from "./analista.mjs";
 import { recuperarContextoEnvio } from "./rag.mjs";
 
 const USO = `Uso: npm run analizar -- <caso.json> [<caso2.json> ...] [--sin-ia] [--sin-pdf] [--lote] [--lote-sin-pdf] [--modelo <id>]
@@ -118,7 +118,7 @@ if (!flag("--sin-pdf")) {
     let resumen = null;
     if (!flag("--sin-ia") && resultados.some((r) => r.ia)) {
       try {
-        resumen = await consultarGeminiResumen({ colaborador, fecha, resultados, modelo: valor("--modelo"), contexto });
+        resumen = await consultarAnalistaResumen({ colaborador, fecha, resultados, modelo: valor("--modelo"), contexto });
         linea(`\nResumen ejecutivo: ${resumen.resumen}`);
         linea(`Recomendación (${resumen.accion}): ${resumen.recomendacion}`);
       } catch (e) {

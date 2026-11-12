@@ -1,6 +1,6 @@
 import { analizarRegistro } from "./analizar.mjs";
 import { extraer } from "./extraer.mjs";
-import { consultarGeminiResumen } from "./gemini.mjs";
+import { consultarAnalistaResumen } from "./analista.mjs";
 import { construirHtmlLote, veredictoGlobalDe } from "./informe.mjs";
 import { recuperarContextoEnvio } from "./rag.mjs";
 
@@ -49,7 +49,7 @@ export async function analizarEnvioLote({ colaborador, fecha, casos, modelo, tok
   let resumen = null;
   if (resultados.some((r) => r.ia)) {
     try {
-      resumen = await consultarGeminiResumen({ colaborador, fecha, resultados, modelo, contexto: ctx });
+      resumen = await consultarAnalistaResumen({ colaborador, fecha, resultados, modelo, contexto: ctx });
     } catch {
       resumen = null;
     }

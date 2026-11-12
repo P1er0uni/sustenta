@@ -153,32 +153,37 @@ npx vercel env add VITE_MS_TENANT_ID production
 
 ### Variables del agente IA (análisis de sustentos + RAG)
 
-El agente (`agente-sustentos/`) usa la API de Gemini (migrado de OpenAI el
-2026-11-11). En local lee la clave de `agente-sustentos/.env`, pero ese
-archivo no está en el repo: en Vercel configúrala como variable de entorno
-del proyecto (`process.env` tiene prioridad sobre el archivo):
+El agente (`agente-sustentos/`) usa dos proveedores de IA, cada uno con su
+variable. En local la config se lee de `agente-sustentos/.env` (no está en el
+repo); en Vercel va como variables de entorno del proyecto (`process.env`
+tiene prioridad sobre el archivo).
+
+**Informes — `IA_PROVEEDOR`** (quién genera veredictos y resúmenes):
 
 ```sh
-npx vercel env add GEMINI_API_KEY production
-# Opcional — modelo distinto del por defecto (gemini-3.1-flash-lite):
-npx vercel env add GEMINI_MODEL production
-```
-
-Para el RAG (base de conocimiento), además del proveedor de producción:
-
-```sh
-# MaaS de Huawei (producción — al tener las credenciales):
-npx vercel env add MAAS_PROVEEDOR production   # "maas" (default)
+# Producción — MaaS de Huawei (ModelArts Studio):
+npx vercel env add IA_PROVEEDOR production          # "maas" (default)
 npx vercel env add MAAS_API_KEY production
-npx vercel env add MAAS_BASE_URL production
-# O, para seguir probando con Gemini:
-#   MAAS_PROVEEDOR=gemini (usa la GEMINI_API_KEY de arriba)
+npx vercel env add MAAS_BASE_URL production         # el access point del despliegue
+npx vercel env add MAAS_ANALISIS_MODEL production    # el modelo de chat desplegado
+# O pruebas — Gemini:
+#   IA_PROVEEDOR=gemini + GEMINI_API_KEY (y opcional GEMINI_MODEL)
 ```
 
-Sin esta variable, el análisis con IA falla en producción (las reglas
-locales sí corren). La conexión a Supabase no requiere configuración: la
-URL y la clave anon (pública por diseño) van en el código
-(`src/integrations/sustenta/client.ts`).
+**Embeddings del RAG — `MAAS_PROVEEDOR`** (hoy `gemini`: el MaaS de Huawei
+CN-Hong Kong es solo de chat, sin embeddings):
+
+```sh
+npx vercel env add MAAS_PROVEEDOR production   # "gemini"
+npx vercel env add GEMINI_API_KEY production
+# Opcional — modelo de embeddings (default gemini-embedding-001 a 1024 dims):
+npx vercel env add MAAS_EMBEDDING_MODEL production
+```
+
+Sin credenciales del proveedor del análisis, la IA falla en producción (las
+reglas locales sí corren) y el RAG se omite. La conexión a Supabase no
+requiere configuración: la URL y la clave anon (pública por diseño) van en el
+código (`src/integrations/sustenta/client.ts`).
 
 O desde el navegador:
 
