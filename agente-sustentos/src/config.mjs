@@ -36,6 +36,21 @@ const proveedor = ["maas", "gemini"].includes(proveedorPedidor) ? proveedorPedid
 const proveedorIAPedidor = limpiar(env.IA_PROVEEDOR).toLowerCase();
 const proveedorIA = ["maas", "gemini"].includes(proveedorIAPedidor) ? proveedorIAPedidor : "maas";
 
+// Cadena de REDUNDANCIA del análisis con el MaaS (chat): el modelo primario
+// se intenta 2 veces y, si no está disponible (cuota agotada, servicio caído,
+// modelo inexistente), se cae al siguiente de la cadena notificando el cambio
+// (ver maas-llm.mjs). MAAS_MODELOS sobreescribe la cadena completa (modelos
+// separados por comas); MAAS_ANALISIS_MODEL fija solo el primario.
+const cadenaPedida = limpiar(env.MAAS_MODELOS)
+  .split(",")
+  .map(limpiar)
+  .filter(Boolean);
+let modelosMaaS = cadenaPedida.length ? cadenaPedida : ["glm-5.3", "glm-5.2", "deepseek-v4.1-flash"];
+const primarioPedidor = limpiar(env.MAAS_ANALISIS_MODEL);
+if (primarioPedidor && !cadenaPedida.length) {
+  modelosMaaS = [primarioPedidor, ...modelosMaaS.filter((m) => m !== primarioPedidor)];
+}
+
 export const config = {
   // Proveedor del análisis (informes) — lo usa analista.mjs.
   proveedorIA,
@@ -55,10 +70,12 @@ export const config = {
     proveedor,
     apiKey: limpiar(env.MAAS_API_KEY),
     baseUrl: limpiar(env.MAAS_BASE_URL),
-    // Modelo de chat que genera los informes (análisis de sustentos). El
-    // nombre es el del modelo desplegado en TU MaaS — no hay default porque
-    // cada despliegue expone los suyos.
-    modeloAnalisis: limpiar(env.MAAS_ANALISIS_MODEL),
+    // Cadena de redundancia del análisis (chat del MaaS): [primario, …fallbacks].
+    // El primario se intenta 2 veces; si no está disponible se cae al siguiente
+    // y se notifica el cambio (bitácora de maas-llm.mjs → toast en la UI).
+    modelos: modelosMaaS,
+    // Primario de la cadena (el CLI lo puede sobreescribir con --modelo).
+    modeloAnalisis: modelosMaaS[0],
     // Embeddings del RAG (spec 002). Con gemini: gemini-embedding-001 a 1024
     // dims — las mismas que bge-m3, para que el paso a producción no cambie
     // la dimensionalidad del índice.

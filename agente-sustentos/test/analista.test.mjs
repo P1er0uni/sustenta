@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parsearJsonSalida, construirMensajes, consultarMaas, consultarMaasResumen } from "../src/maas-llm.mjs";
+import {
+  parsearJsonSalida,
+  construirMensajes,
+  consultarMaas,
+  consultarMaasResumen,
+  esErrorDeDisponibilidad,
+  conRedundancia,
+  avisosDeCambioDeModelo,
+  limpiarCambiosDeModelo,
+} from "../src/maas-llm.mjs";
 import { esMaas, modeloAnalista, analistaConfigurado, mensajeAnalistaNoConfigurado } from "../src/analista.mjs";
 import { config } from "../src/config.mjs";
 
@@ -98,9 +107,7 @@ test("analista: el modelo por defecto y el mensaje de falta de config siguen al 
   // analistaConfigurado refleja si el proveedor del análisis tiene credenciales.
   assert.equal(
     analistaConfigurado(),
-    esMaas()
-      ? Boolean(config.maas.apiKey && config.maas.baseUrl && config.maas.modeloAnalisis)
-      : Boolean(config.apiKey),
+    esMaas() ? Boolean(config.maas.apiKey && config.maas.baseUrl) : Boolean(config.apiKey),
   );
 });
 
@@ -112,6 +119,105 @@ test("sin credenciales del MaaS: consultarMaas explica qué falta", { skip: Bool
   );
 });
 
-test("MaaS sin modelo de análisis: exige MAAS_ANALISIS_MODEL antes de llamar", { skip: Boolean(config.maas.modeloAnalisis) }, async () => {
-  await assert.rejects(consultarMaas({ registro, archivos: [] }), /MAAS_ANALISIS_MODEL/);
+// ─── Redundancia de modelos (cadena glm-5.3 → glm-5.2 → deepseek-v4.1-flash) ───
+
+test("esErrorDeDisponibilidad: 404/429/5xx/red sí; 400/401/403 no", () => {
+  const con = (status) => Object.assign(new Error("x"), { status });
+  assert.equal(esErrorDeDisponibilidad(con(404)), true);
+  assert.equal(esErrorDeDisponibilidad(con(429)), true);
+  assert.equal(esErrorDeDisponibilidad(con(500)), true);
+  assert.equal(esErrorDeDisponibilidad(con(503)), true);
+  assert.equal(esErrorDeDisponibilidad(new Error("Connection error")), true); // red: sin status
+  assert.equal(esErrorDeDisponibilidad(con(400)), false); // contenido: se degrada
+  assert.equal(esErrorDeDisponibilidad(con(422)), false); // parámetros: se degrada
+  assert.equal(esErrorDeDisponibilidad(con(401)), false); // credenciales: no hay modelo que lo arregle
+  assert.equal(esErrorDeDisponibilidad(con(403)), false);
+});
+
+test("cadena de redundancia: 2 intentos por modelo, luego cae al siguiente y avisa", async () => {
+  limpiarCambiosDeModelo();
+  const llamadas = [];
+  const { resultado, modelo } = await conRedundancia({
+    modelo: "primario-falso",
+    llamar: async (m) => {
+      llamadas.push(m);
+      if (m === "primario-falso") throw Object.assign(new Error("Service unavailable"), { status: 503 });
+      return `ok-${m}`;
+    },
+  });
+  // El primario se intentó exactamente 2 veces antes de caer al siguiente.
+  assert.equal(llamadas.filter((m) => m === "primario-falso").length, 2);
+  assert.equal(llamadas.length, 3);
+  assert.equal(modelo, llamadas[2]);
+  assert.equal(resultado, `ok-${modelo}`);
+  // El aviso quedó en la bitácora, en claro y con el motivo.
+  const avisos = avisosDeCambioDeModelo();
+  assert.equal(avisos.length, 1);
+  assert.match(avisos[0], /Cambio de modelo: primario-falso no disponible \(HTTP 503/);
+  assert.match(avisos[0], new RegExp(`usando ${modelo}\\.`));
+  // Varios registros en paralelo que caen al mismo cambio: un solo aviso.
+  await conRedundancia({
+    modelo: "primario-falso",
+    llamar: async (m) => {
+      if (m === "primario-falso") throw Object.assign(new Error("Service unavailable"), { status: 503 });
+      return "ok";
+    },
+  });
+  assert.equal(avisosDeCambioDeModelo().length, 1);
+});
+
+test("cadena de redundancia: errores de contenido (400) y credenciales (401) no cambian de modelo", async () => {
+  limpiarCambiosDeModelo();
+  const llamadas = [];
+  await assert.rejects(
+    conRedundancia({
+      modelo: "primario",
+      llamar: async (m) => {
+        llamadas.push(m);
+        throw Object.assign(new Error("unsupported content type"), { status: 400 });
+      },
+    }),
+    /unsupported content type/,
+  );
+  assert.equal(llamadas.length, 1); // ni reintento ni cambio: lo maneja la degradación de modos
+  await assert.rejects(
+    conRedundancia({
+      modelo: "primario",
+      llamar: async (m) => {
+        llamadas.push(m);
+        throw Object.assign(new Error("bad key"), { status: 401 });
+      },
+    }),
+    /bad key/,
+  );
+  assert.equal(llamadas.length, 2);
+  assert.deepEqual(avisosDeCambioDeModelo(), []);
+});
+
+test("cadena de redundancia: cadena agotada lanza el último error tras 2 intentos por modelo", async () => {
+  limpiarCambiosDeModelo();
+  const llamadas = [];
+  await assert.rejects(
+    conRedundancia({
+      modelo: "a-falso",
+      llamar: async (m) => {
+        llamadas.push(m);
+        throw Object.assign(new Error("down"), { status: 503 });
+      },
+    }),
+    /down/,
+  );
+  // "a-falso" (primario pedido) + el resto de la cadena, 2 intentos cada uno.
+  assert.equal(llamadas.length, (1 + config.maas.modelos.length) * 2);
+  // Un aviso por cada caída al siguiente modelo.
+  assert.equal(avisosDeCambioDeModelo().length, llamadas.length / 2 - 1);
+});
+
+test("config: la cadena de redundancia por defecto y su primario", () => {
+  // Primario = primer modelo de la cadena; el CLI lo sobreescribe con --modelo.
+  assert.equal(config.maas.modeloAnalisis, config.maas.modelos[0]);
+  // La cadena por defecto cubre los tres modelos de redundancia.
+  for (const m of ["glm-5.3", "glm-5.2", "deepseek-v4.1-flash"]) {
+    assert.ok(config.maas.modelos.includes(m), `la cadena incluye ${m}`);
+  }
 });

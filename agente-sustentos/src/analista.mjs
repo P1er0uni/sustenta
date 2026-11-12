@@ -7,8 +7,10 @@ import { consultarMaas, consultarMaasResumen } from "./maas-llm.mjs";
  * los envíos): la variable IA_PROVEEDOR elige quién genera los INFORMES —
  *
  *   IA_PROVEEDOR=maas   → MaaS de Huawei (ModelArts Studio), PRODUCCIÓN:
- *                          chat compatible con OpenAI. Requiere MAAS_API_KEY,
- *                          MAAS_BASE_URL y MAAS_ANALISIS_MODEL.
+ *                          chat compatible con OpenAI. Requiere MAAS_API_KEY
+ *                          y MAAS_BASE_URL; el modelo primario es glm-5.3 con
+ *                          cadena de redundancia (glm-5.2, deepseek-v4.1-flash
+ *                          — ver maas-llm.mjs).
  *   IA_PROVEEDOR=gemini → Google AI Studio, PRUEBAS: la GEMINI_API_KEY
  *                          (gemini-3.1-flash-lite).
  *
@@ -34,15 +36,13 @@ export function modeloAnalista() {
 /** ¿El proveedor activo tiene credenciales? (para pruebas y mensajes claros;
  *  el flujo principal degrada por sí solo — ver cada módulo.) */
 export function analistaConfigurado() {
-  return esMaas()
-    ? Boolean(config.maas.apiKey && config.maas.baseUrl && config.maas.modeloAnalisis)
-    : Boolean(config.apiKey);
+  return esMaas() ? Boolean(config.maas.apiKey && config.maas.baseUrl) : Boolean(config.apiKey);
 }
 
 /** Qué falta para el proveedor activo, en claro (lo muestran los errores). */
 export function mensajeAnalistaNoConfigurado() {
   return esMaas()
-    ? "Análisis IA sin configurar: el MaaS de Huawei necesita MAAS_API_KEY, MAAS_BASE_URL (el access point del despliegue) y MAAS_ANALISIS_MODEL en agente-sustentos/.env."
+    ? "Análisis IA sin configurar: el MaaS de Huawei necesita MAAS_API_KEY y MAAS_BASE_URL (el access point del despliegue) en agente-sustentos/.env."
     : "Análisis IA sin configurar: falta GEMINI_API_KEY en agente-sustentos/.env (créala en aistudio.google.com) — o configura el MaaS de Huawei con IA_PROVEEDOR=maas.";
 }
 

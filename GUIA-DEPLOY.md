@@ -165,7 +165,10 @@ tiene prioridad sobre el archivo).
 npx vercel env add IA_PROVEEDOR production          # "maas" (default)
 npx vercel env add MAAS_API_KEY production
 npx vercel env add MAAS_BASE_URL production         # el access point del despliegue
-npx vercel env add MAAS_ANALISIS_MODEL production    # el modelo de chat desplegado
+# Opcional — el análisis usa la cadena de redundancia glm-5.3 → glm-5.2 →
+# deepseek-v4.1-flash (2 intentos por modelo; si uno no está disponible, cae al
+# siguiente y la UI notifica el cambio). Solo si quieres otra cadena:
+npx vercel env add MAAS_MODELOS production          # "glm-5.3,glm-5.2,deepseek-v4.1-flash"
 # O pruebas — Gemini:
 #   IA_PROVEEDOR=gemini + GEMINI_API_KEY (y opcional GEMINI_MODEL)
 ```

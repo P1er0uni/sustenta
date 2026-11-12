@@ -16,6 +16,9 @@ interface AnalizarResultado {
   ok: boolean;
   salida: string;
   pdfArchivo?: string | undefined;
+  /** Redundancia del MaaS: avisos de cambio de modelo ("glm-5.3 no disponible
+   *  → usando glm-5.2") para notificar en la UI. */
+  avisosModelo?: string[];
 }
 
 const sinTildes = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -442,7 +445,7 @@ export const analizarEnvio = createServerFn({ method: "POST" })
         } catch (e) {
           console.error("[analizarEnvio] RAG (omitido):", e);
         }
-        return { ok: true, salida: out.salida, pdfArchivo: entrada.archivo };
+        return { ok: true, salida: out.salida, pdfArchivo: entrada.archivo, avisosModelo: out.avisos ?? [] };
       }
 
       const agenteDir = resolve(process.cwd(), "agente-sustentos");
@@ -512,6 +515,9 @@ export const analizarEnvio = createServerFn({ method: "POST" })
         );
       });
       if (!resultado.ok) return { ok: false, salida: resultado.salida };
+      // Redundancia del MaaS: el CLI imprime los avisos de cambio de modelo
+      // en stdout ("Cambio de modelo: …") — se separan para el toast de la UI.
+      const avisosModelo = [...resultado.salida.matchAll(/Cambio de modelo: [^\r\n]*/g)].map((x) => x[0].trim());
 
       // 3. Leer el manifest y devolver el PDF del envío (un informe por colaborador+día).
       const fechaEnvio = data.registros[0]?.fecha ?? "";
@@ -543,7 +549,7 @@ export const analizarEnvio = createServerFn({ method: "POST" })
       } catch (e) {
         console.error("[analizarEnvio] RAG (omitido):", e);
       }
-      return { ok: true, salida: resultado.salida, pdfArchivo: pdfArchivo ?? undefined };
+      return { ok: true, salida: resultado.salida, pdfArchivo: pdfArchivo ?? undefined, avisosModelo };
     } catch (e) {
       console.error("[analizarEnvio] Error:", e);
       return { ok: false, salida: `Error inesperado: ${(e as Error).message}` };

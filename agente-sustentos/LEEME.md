@@ -50,14 +50,24 @@ nombre exacto, sin `.txt`):
 IA_PROVEEDOR=maas
 MAAS_API_KEY=tu_api_key_del_maas
 MAAS_BASE_URL=https://api-ap-southeast-1.modelarts-maas.com/openai/v1
-MAAS_ANALISIS_MODEL=glm-5.2
+MAAS_ANALISIS_MODEL=glm-5.3
 ```
 
 - `MAAS_BASE_URL` es el **access point** de tu despliegue MaaS (el de arriba es el de la región
   CN-Hong Kong, la única con API compatible con OpenAI).
-- `MAAS_ANALISIS_MODEL` es el nombre del **modelo de chat** desplegado en tu MaaS (no hay default:
-  cada despliegue expone los suyos; p. ej. `glm-5.2`, `glm-5.3`, `deepseek-v4.1-flash`). Se puede
-  sobreescribir por corrida con `--modelo <id>`.
+- `MAAS_ANALISIS_MODEL` es el modelo **primario** de la **cadena de redundancia** (opcional: si se
+  quita, el primario es `glm-5.3`). Se puede sobreescribir por corrida con `--modelo <id>`.
+
+**Redundancia de modelos.** El análisis usa la cadena `glm-5.3 → glm-5.2 → deepseek-v4.1-flash`:
+cada modelo se intenta **2 veces** y, si no está disponible (cuota agotada, servicio caído, modelo
+inexistente), se cae al siguiente dejando un aviso — "Cambio de modelo: …" en la terminal y una
+notificación en la plataforma. Solo los errores de *disponibilidad* cambian de modelo; los de
+contenido (400/422) se degradan el contenido y los de credenciales (401/403) no los arregla ningún
+modelo. `MAAS_MODELOS` sobreescribe la cadena completa, separada por comas:
+
+```
+MAAS_MODELOS=glm-5.3,glm-5.2,deepseek-v4.1-flash
+```
 
 Cómo entra la evidencia al modelo de chat (la API de chat no lee binarios en línea como Gemini):
 
@@ -181,7 +191,8 @@ Los dos casos incluidos son una demo: dos días de un colaborador que adjuntó c
 |---|---|
 | `Falta GEMINI_API_KEY` | El proveedor activo es Gemini (o el `.env` no existe, se llama `.env.txt` o la clave no está pegada) |
 | `Falta configurar el MaaS de Huawei` / `MAAS_API_KEY` | El análisis usa el MaaS (`IA_PROVEEDOR=maas`): faltan `MAAS_API_KEY` y `MAAS_BASE_URL` en el `.env` |
-| `Falta MAAS_ANALISIS_MODEL` | Falta el nombre del modelo de chat desplegado en tu MaaS (`.env`) |
+| `Falta MAAS_ANALISIS_MODEL` | Ya no se exige: sin ella el primario es `glm-5.3` con la cadena de redundancia (arriba) |
+| "Cambio de modelo: …" | No es un error: el modelo primario no estaba disponible y el informe salió con el siguiente de la cadena de redundancia (ver de qué modelo salió en la trazabilidad del informe) |
 | 429 / cuota agotada | Límite de la capa gratuita de Gemini (por minuto o por día): espera un momento o revisa el uso en aistudio.google.com (Usage); con el MaaS, revisa la cuota de tu despliegue |
 | 401/403 / clave inválida | La clave está mal copiada, fue revocada o pertenece a otro proyecto/despliegue |
 | 404 / modelo no disponible | El nombre del modelo no existe en el proveedor activo: usa `--modelo` con otro (o actualiza `MAAS_ANALISIS_MODEL`/`GEMINI_MODEL` en el `.env`) |

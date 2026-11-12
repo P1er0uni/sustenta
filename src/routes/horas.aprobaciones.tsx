@@ -612,6 +612,9 @@ function InformeEnvioIA({
     onSuccess: async (res) => {
       if (res.ok && res.pdfArchivo) {
         toast.success("Informe del envío generado. Abriendo editor…");
+        // Redundancia del MaaS: si el modelo primario no estaba disponible y el
+        // informe salió con uno de respaldo, se notifica el cambio.
+        for (const aviso of res.avisosModelo ?? []) toast.warning(aviso);
         const params = new URLSearchParams({
           tipo: "lote",
           colaborador: nombre,
