@@ -10,9 +10,7 @@ Es **consultivo**: no aprueba, no rechaza y no modifica nada en Sustenta.
 
 - **Windows**, con **Node.js 20 o superior** (`node --version` debe responder).
 - **Microsoft Edge o Google Chrome**, para generar el PDF. Sin ellos el agente deja el informe en HTML.
-- Una IA para el análisis, una de estas dos (paso 3):
-  - **MaaS de Huawei (ModelArts Studio)** — el proveedor de producción: con sus credenciales, los informes los generan sus modelos de chat.
-  - **Una clave de API de Gemini** — para pruebas: se crea gratis en aistudio.google.com y la capa gratuita alcanza (con límites por minuto/día).
+- Una **clave de API de OpenAI** para el análisis (paso 3) — platform.openai.com → API keys.
 - Internet, salvo que uses el modo sin IA.
 
 ## 1. Descomprimir
@@ -29,89 +27,51 @@ npm install
 
 Se hace una sola vez.
 
-## 3. Configurar la IA (MaaS de Huawei o Gemini)
+## 3. Configurar la IA (OpenAI para informes, Gemini para el RAG)
 
 El agente usa dos proveedores de IA, cada uno con su variable del `.env`:
 
 | Qué | Variable | Valores |
 |---|---|---|
-| **Genera los informes** (veredictos y resúmenes) | `IA_PROVEEDOR` | `maas` (default, producción) · `gemini` (pruebas) |
-| **Embeddings del RAG** (base de conocimiento) | `MAAS_PROVEEDOR` | `gemini` (hoy el único que funciona) · `maas` (si tu despliegue los expone) |
+| **Genera los informes** (veredictos y resúmenes) | `OPENAI_API_KEY` | Clave de platform.openai.com (modelo default `gpt-5.6`) |
+| **Embeddings del RAG** (base de conocimiento) | `GEMINI_API_KEY` | Clave de aistudio.google.com (modelo default `gemini-embedding-001`) |
 
-Están separados a propósito: el MaaS de Huawei (CN-Hong Kong) hoy es **solo de chat** — no expone
-embeddings — así que los informes los genera el MaaS y el RAG sigue corriendo con Gemini.
+Están separados a propósito: los informes los genera OpenAI y el RAG corre con Gemini.
 
-### Opción A — MaaS de Huawei (producción, informes)
+### OpenAI (informes)
 
-Cuando tengas las credenciales de tu despliegue MaaS, en el `.env` (si no existe, créalo con ese
-nombre exacto, sin `.txt`):
+1. Entra a https://platform.openai.com → **API keys** y crea una clave.
+2. En la carpeta del agente abre el archivo `.env` (si no existe, créalo con ese nombre exacto,
+   sin `.txt`) y pega:
 
-```
-IA_PROVEEDOR=maas
-MAAS_API_KEY=tu_api_key_del_maas
-MAAS_BASE_URL=https://api-ap-southeast-1.modelarts-maas.com/openai/v1
-MAAS_ANALISIS_MODEL=glm-5.3
-```
+   ```
+   OPENAI_API_KEY=tu_clave_aqui
+   ```
 
-- `MAAS_BASE_URL` es el **access point** de tu despliegue MaaS (el de arriba es el de la región
-  CN-Hong Kong, la única con API compatible con OpenAI).
-- `MAAS_ANALISIS_MODEL` es el modelo **primario** de la **cadena de redundancia** (opcional: si se
-  quita, el primario es `glm-5.3`). Se puede sobreescribir por corrida con `--modelo <id>`.
+3. Guarda. No compartas ese archivo ni lo subas a ningún repositorio.
 
-**Redundancia de modelos.** El análisis usa la cadena `glm-5.3 → glm-5.2 → deepseek-v4.1-flash`:
-cada modelo se intenta **2 veces** y, si no está disponible (cuota agotada, servicio caído, modelo
-inexistente), se cae al siguiente dejando un aviso — "Cambio de modelo: …" en la terminal y una
-notificación en la plataforma. Los **timeouts no se reintentan** (el intento ya costó los 3 minutos
-del timeout): caen directo al siguiente modelo. Solo los errores de *disponibilidad* cambian de
-modelo; los de contenido (400/422) se degradan el contenido y los de credenciales (401/403) no los
-arregla ningún modelo. `MAAS_MODELOS` sobreescribe la cadena completa, separada por comas:
+**Sobre el modelo.** Se usa `gpt-5.6` por defecto. Puedes cambiarlo en el `.env`
+(`OPENAI_MODEL=...`) o al correr el comando (`--modelo <id>`).
 
-```
-MAAS_MODELOS=glm-5.3,glm-5.2,deepseek-v4.1-flash
-```
-
-Cómo entra la evidencia al modelo de chat (la API de chat no lee binarios en línea como Gemini):
+Cómo entra la evidencia al modelo:
 
 - **XLSX / DOCX / PPTX**: el texto ya extraído (igual que siempre).
-- **PDF**: se le extrae el texto en el agente (unpdf). Si es escaneado y no hay texto, el modelo lo
-  trata como ilegible.
-- **Imágenes (PNG/JPG)**: van en base64 con el formato estándar de visión de la API de OpenAI, que
-  los modelos multimodales del MaaS entienden (p. ej. DeepSeek-V4.1-Flash). Si tu modelo desplegado
-  no admite imágenes, la llamada se degrada sola (la imagen se vuelve una nota) y el análisis sigue
-  saliendo.
+- **PDF e imágenes (PNG/JPG)**: van en línea como archivo/imagen en base64 — GPT los lee
+  nativamente. Si un PDF es escaneado y el modelo no puede leerlo, el veredicto sale ilegible.
 
-### Opción B — Gemini (pruebas, informes)
-
-1. Entra a https://aistudio.google.com, inicia sesión con tu cuenta de Google y pulsa **"Get API key"** para crear una clave.
-2. La capa **gratuita** alcanza para las pruebas del agente (con límites por minuto y por día). Para uso sostenido, activa billing en Google AI Studio.
-3. En la carpeta del agente abre el archivo `.env` y pega:
-
-   ```
-   IA_PROVEEDOR=gemini
-   GEMINI_API_KEY=tu_clave_aqui
-   ```
-
-4. Guarda. No compartas ese archivo ni lo subas a ningún repositorio.
-
-**Sobre el modelo.** Con Gemini se usa `gemini-3.1-flash-lite` por defecto (el más barato de los
-actuales, con capa gratuita; ver precios en aistudio.google.com/docs/pricing). Puedes cambiarlo en
-el `.env` (`GEMINI_MODEL=...`) o al correr el comando (`--modelo <id>`).
-
-### Embeddings del RAG (base de conocimiento)
+### Gemini (embeddings del RAG)
 
 El RAG (spec `specs/002-rag-base-conocimiento/` de la plataforma) convierte los informes generados en
-una base de conocimiento buscable por significado. Los **embeddings** los calcula el proveedor de
-`MAAS_PROVEEDOR` — hoy `gemini` (el MaaS de Huawei no expone embeddings). Variables del `.env`:
+una base de conocimiento buscable por significado. Los **embeddings** los calcula Gemini con la
+`GEMINI_API_KEY`. Variables del `.env`:
 
-- `MAAS_EMBEDDING_MODEL` / `MAAS_EMBEDDING_DIMS`: default según proveedor (`bge-m3`/1024 con maas,
-  `gemini-embedding-001`/1024 con gemini). `MAAS_EMBEDDING_DIMS` es informativa: el índice del RAG
-  vive en Storage (archivos `.rag` junto a los informes IA), no hay que crear nada en Supabase.
-- **Sin credenciales del proveedor activo, el agente y la plataforma funcionan igual**: el RAG
-  simplemente se omite (indexado, contexto del resumen y búsqueda quedan desactivados y se loguea).
+- `GEMINI_EMBEDDING_MODEL` / `GEMINI_EMBEDDING_DIMS`: default `gemini-embedding-001`/1024 (la
+  dimensionalidad del índice ya existente en Storage). `GEMINI_EMBEDDING_DIMS` es informativa: el
+  índice del RAG vive en Storage (archivos `.rag` junto a los informes IA), no hay que crear nada
+  en Supabase.
+- **Sin `GEMINI_API_KEY`, el agente y la plataforma funcionan igual**: el RAG simplemente se omite
+  (indexado, contexto del resumen y búsqueda quedan desactivados y se loguea).
 - Backfill de informes ya generados: `SUPABASE_TOKEN=<token_de_sesion> node src/rag-backfill.mjs`.
-- **Si algún día cambias `MAAS_PROVEEDOR`** (p. ej. porque tu MaaS ya expone embeddings), corre el
-  backfill otra vez: el índice se etiqueta por proveedor (`rag-*.maas.rag` / `rag-*.gemini.rag`) y
-  la búsqueda usa solo el del proveedor activo.
 
 ## 4. Correr el agente
 
@@ -182,7 +142,7 @@ Los dos casos incluidos son una demo: dos días de un colaborador que adjuntó c
 |---|---|
 | Correr sin IA, sin clave ni internet (solo reglas) | añadir `--sin-ia` |
 | No generar el PDF | añadir `--sin-pdf` |
-| Usar otro modelo (del proveedor activo) | añadir `--modelo <id>` (con Gemini: `--modelo gemini-3.5-flash-lite`; con el MaaS: el nombre de otro modelo desplegado) |
+| Usar otro modelo de OpenAI | añadir `--modelo <id>` |
 | Rehacer los PDF sin gastar cuota | `npm run informe -- resultados\<archivo>.json casos\<caso>.json` |
 | Verificar que el código funciona | `npm test` |
 
@@ -190,19 +150,16 @@ Los dos casos incluidos son una demo: dos días de un colaborador que adjuntó c
 
 | Mensaje | Causa y solución |
 |---|---|
-| `Falta GEMINI_API_KEY` | El proveedor activo es Gemini (o el `.env` no existe, se llama `.env.txt` o la clave no está pegada) |
-| `Falta configurar el MaaS de Huawei` / `MAAS_API_KEY` | El análisis usa el MaaS (`IA_PROVEEDOR=maas`): faltan `MAAS_API_KEY` y `MAAS_BASE_URL` en el `.env` |
-| `Falta MAAS_ANALISIS_MODEL` | Ya no se exige: sin ella el primario es `glm-5.3` con la cadena de redundancia (arriba) |
-| "Cambio de modelo: …" | No es un error: el modelo primario no estaba disponible y el informe salió con el siguiente de la cadena de redundancia (ver de qué modelo salió en la trazabilidad del informe) |
-| 429 / cuota agotada | Límite de la capa gratuita de Gemini (por minuto o por día): espera un momento o revisa el uso en aistudio.google.com (Usage); con el MaaS, revisa la cuota de tu despliegue |
-| 401/403 / clave inválida | La clave está mal copiada, fue revocada o pertenece a otro proyecto/despliegue |
-| 404 / modelo no disponible | El nombre del modelo no existe en el proveedor activo: usa `--modelo` con otro (o actualiza `MAAS_ANALISIS_MODEL`/`GEMINI_MODEL` en el `.env`) |
+| `Falta OPENAI_API_KEY` | El `.env` no existe, se llama `.env.txt` o la clave no está pegada |
+| 429 / cuota agotada | Cuota de OpenAI agotada o sin crédito: revisa el saldo y método de pago en platform.openai.com (Billing), o prueba otro modelo con `--modelo <id>` |
+| 401/403 / clave inválida | La clave está mal copiada, fue revocada o pertenece a otro proyecto/organización |
+| 404 / modelo no disponible | El nombre del modelo no existe en OpenAI: usa `--modelo` con otro (o actualiza `OPENAI_MODEL` en el `.env`) |
+| `Falta GEMINI_API_KEY` (RAG) | Los embeddings del RAG necesitan la clave de aistudio.google.com; sin ella el RAG se omite y el resto funciona igual |
 | "Formato no aceptado" | El archivo no es de los formatos soportados |
 | Se creó un HTML en vez de un PDF | No hay Edge ni Chrome instalados: abre el HTML y usa Ctrl+P → Guardar como PDF |
 
 ## Privacidad
 
-Con el modo con IA, los documentos se envían a la API del proveedor activo para su lectura: el MaaS
-de Huawei (ModelArts Studio) en producción, o Gemini (Google) en pruebas. Úsalo con datos de
-demostración hasta confirmar con el área correspondiente que los documentos reales pueden salir
-hacia ese servicio.
+Con el modo con IA, los documentos se envían a la API de OpenAI para su lectura (y al RAG, a la de
+Gemini). Úsalo con datos de demostración hasta confirmar con el área correspondiente que los
+documentos reales pueden salir hacia ese servicio.

@@ -158,35 +158,26 @@ variable. En local la config se lee de `agente-sustentos/.env` (no está en el
 repo); en Vercel va como variables de entorno del proyecto (`process.env`
 tiene prioridad sobre el archivo).
 
-**Informes — `IA_PROVEEDOR`** (quién genera veredictos y resúmenes):
+**Informes — OpenAI** (veredictos y resúmenes):
 
 ```sh
-# Producción — MaaS de Huawei (ModelArts Studio):
-npx vercel env add IA_PROVEEDOR production          # "maas" (default)
-npx vercel env add MAAS_API_KEY production
-npx vercel env add MAAS_BASE_URL production         # el access point del despliegue
-# Opcional — el análisis usa la cadena de redundancia glm-5.3 → glm-5.2 →
-# deepseek-v4.1-flash (2 intentos por modelo; si uno no está disponible, cae al
-# siguiente y la UI notifica el cambio). Solo si quieres otra cadena:
-npx vercel env add MAAS_MODELOS production          # "glm-5.3,glm-5.2,deepseek-v4.1-flash"
-# O pruebas — Gemini:
-#   IA_PROVEEDOR=gemini + GEMINI_API_KEY (y opcional GEMINI_MODEL)
+npx vercel env add OPENAI_API_KEY production
+# Opcional — modelo por defecto (si se quita, se usa gpt-5.6):
+npx vercel env add OPENAI_MODEL production
 ```
 
-**Embeddings del RAG — `MAAS_PROVEEDOR`** (hoy `gemini`: el MaaS de Huawei
-CN-Hong Kong es solo de chat, sin embeddings):
+**Embeddings del RAG — Gemini** (base de conocimiento):
 
 ```sh
-npx vercel env add MAAS_PROVEEDOR production   # "gemini"
 npx vercel env add GEMINI_API_KEY production
 # Opcional — modelo de embeddings (default gemini-embedding-001 a 1024 dims):
-npx vercel env add MAAS_EMBEDDING_MODEL production
+npx vercel env add GEMINI_EMBEDDING_MODEL production
 ```
 
-Sin credenciales del proveedor del análisis, la IA falla en producción (las
-reglas locales sí corren) y el RAG se omite. La conexión a Supabase no
-requiere configuración: la URL y la clave anon (pública por diseño) van en el
-código (`src/integrations/sustenta/client.ts`).
+Sin `OPENAI_API_KEY` la IA falla en producción (las reglas locales sí corren)
+y sin `GEMINI_API_KEY` el RAG se omite. La conexión a Supabase no requiere
+configuración: la URL y la clave anon (pública por diseño) van en el código
+(`src/integrations/sustenta/client.ts`).
 
 O desde el navegador:
 

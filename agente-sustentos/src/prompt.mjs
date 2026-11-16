@@ -1,13 +1,11 @@
 /**
  * Material del prompt del análisis: instrucciones de sistema, esquemas de
- * salida y descripciones del registro/envío. Compartido por TODOS los
- * proveedores del análisis (Gemini y el MaaS de Huawei — ver analista.mjs):
- * el criterio de revisión es el mismo sin importar qué modelo responde.
+ * salida y descripciones del registro/envío. Lo consume openai.mjs (el
+ * proveedor del análisis): el criterio de revisión es siempre el mismo.
  *
- * Los esquemas están en el subconjunto OpenAPI que exige response_schema de
- * Gemini (type/enum/items/properties/required, todos los campos en required);
- * para proveedores sin salida estructurada nativa, esquemaParaPrompt() los
- * vierte al prompt como texto (ver maas-llm.mjs).
+ * Los esquemas están en JSON Schema estricto (structured outputs de OpenAI:
+ * tipos en minúscula, todos los campos en required y additionalProperties:
+ * false en cada objeto).
  */
 
 export const INSTRUCCION_SISTEMA = `Eres un revisor de registros de horas de un servicio intragrupo.
@@ -76,25 +74,26 @@ REGLAS
 Responde solo con el JSON del esquema, en español.`;
 
 const comprobacion = {
-  type: "OBJECT",
+  type: "object",
   properties: {
-    resultado: { type: "STRING", enum: ["coincide", "no_coincide", "no_verificable"] },
-    explicacion: { type: "STRING" },
+    resultado: { type: "string", enum: ["coincide", "no_coincide", "no_verificable"] },
+    explicacion: { type: "string" },
   },
   required: ["resultado", "explicacion"],
+  additionalProperties: false,
 };
 
-// Esquema del veredicto por registro (subconjunto OpenAPI — ver cabecera).
+// Esquema del veredicto por registro (JSON Schema estricto — ver cabecera).
 export const ESQUEMA = {
-  type: "OBJECT",
+  type: "object",
   properties: {
-    veredicto: { type: "STRING", enum: ["sustenta", "sustenta_parcial", "no_sustenta", "ilegible"] },
-    confianza: { type: "STRING", enum: ["alta", "media", "baja"] },
-    resumen: { type: "STRING", description: "Resumen claro y detallado de qué hizo el colaborador durante las horas declaradas, según la evidencia adjunta. 3 a 6 frases." },
-    resumen_evidencia: { type: "STRING", description: "Resumen estructurado en bullets para el expediente: tareas concretas, documentos elaborados/revisados, resultados obtenidos." },
-    tipo_documento: { type: "STRING" },
+    veredicto: { type: "string", enum: ["sustenta", "sustenta_parcial", "no_sustenta", "ilegible"] },
+    confianza: { type: "string", enum: ["alta", "media", "baja"] },
+    resumen: { type: "string", description: "Resumen claro y detallado de qué hizo el colaborador durante las horas declaradas, según la evidencia adjunta. 3 a 6 frases." },
+    resumen_evidencia: { type: "string", description: "Resumen estructurado en bullets para el expediente: tareas concretas, documentos elaborados/revisados, resultados obtenidos." },
+    tipo_documento: { type: "string" },
     comprobaciones: {
-      type: "OBJECT",
+      type: "object",
       properties: {
         fecha: comprobacion,
         colaborador: comprobacion,
@@ -103,43 +102,42 @@ export const ESQUEMA = {
         horas: comprobacion,
       },
       required: ["fecha", "colaborador", "proyecto_o_empresa", "actividad", "horas"],
+      additionalProperties: false,
     },
     citas: {
-      type: "ARRAY",
+      type: "array",
       items: {
-        type: "OBJECT",
-        properties: { archivo: { type: "STRING" }, texto: { type: "STRING" }, sirve_para: { type: "STRING" } },
+        type: "object",
+        properties: { archivo: { type: "string" }, texto: { type: "string" }, sirve_para: { type: "string" } },
         required: ["archivo", "texto", "sirve_para"],
+        additionalProperties: false,
       },
     },
     alertas: {
-      type: "ARRAY",
+      type: "array",
       items: {
-        type: "OBJECT",
-        properties: { codigo: { type: "STRING" }, detalle: { type: "STRING" } },
+        type: "object",
+        properties: { codigo: { type: "string" }, detalle: { type: "string" } },
         required: ["codigo", "detalle"],
+        additionalProperties: false,
       },
     },
-    evidencia_faltante: { type: "STRING" },
+    evidencia_faltante: { type: "string" },
   },
   required: ["veredicto", "confianza", "resumen", "resumen_evidencia", "tipo_documento", "comprobaciones", "citas", "alertas", "evidencia_faltante"],
+  additionalProperties: false,
 };
 
 export const ESQUEMA_RESUMEN = {
-  type: "OBJECT",
+  type: "object",
   properties: {
-    resumen: { type: "STRING" },
-    recomendacion: { type: "STRING" },
-    accion: { type: "STRING", enum: ["aprobar", "aprobar_con_observaciones", "rechazar"] },
+    resumen: { type: "string" },
+    recomendacion: { type: "string" },
+    accion: { type: "string", enum: ["aprobar", "aprobar_con_observaciones", "rechazar"] },
   },
   required: ["resumen", "recomendacion", "accion"],
+  additionalProperties: false,
 };
-
-/** El esquema como texto para el prompt (proveedores sin response_schema
- *  nativo: se pega al final de la instrucción de sistema). */
-export function esquemaParaPrompt(esquema) {
-  return `Tu respuesta debe ser ÚNICAMENTE un objeto JSON válido, sin texto antes ni después, con exactamente esta forma (los campos con "enum" solo aceptan los valores listados; las listas "citas" y "alertas" pueden quedar vacías):\n${JSON.stringify(esquema, null, 1)}`;
-}
 
 /** Volcado del registro de horas para el prompt. */
 export function descripcionRegistro(r) {

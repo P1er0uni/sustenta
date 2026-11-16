@@ -1,64 +1,41 @@
 import { config } from "./config.mjs";
-import { consultarGemini, consultarGeminiResumen } from "./gemini.mjs";
-import { consultarMaas, consultarMaasResumen } from "./maas-llm.mjs";
+import { consultarOpenAI, consultarOpenAIResumen } from "./openai.mjs";
 
 /**
  * Dispatcher del análisis IA (veredictos de registros + resumen ejecutivo de
- * los envíos): la variable IA_PROVEEDOR elige quién genera los INFORMES —
+ * los envíos): los informes los genera OpenAI (openai.mjs, API Responses con
+ * structured outputs) con la OPENAI_API_KEY.
  *
- *   IA_PROVEEDOR=maas   → MaaS de Huawei (ModelArts Studio), PRODUCCIÓN:
- *                          chat compatible con OpenAI. Requiere MAAS_API_KEY
- *                          y MAAS_BASE_URL; el modelo primario es glm-5.3 con
- *                          cadena de redundancia (glm-5.2, deepseek-v4.1-flash
- *                          — ver maas-llm.mjs).
- *   IA_PROVEEDOR=gemini → Google AI Studio, PRUEBAS: la GEMINI_API_KEY
- *                          (gemini-3.1-flash-lite).
- *
- * (default: "maas"; cualquier otro valor cae a "maas" — ver config.mjs.)
- *
- * Separado del proveedor de EMBEDDINGS del RAG (MAAS_PROVEEDOR, spec 002):
- * cada cosa va con el proveedor que la soporte — hoy el MaaS de Huawei
- * (CN-Hong Kong) es solo de chat, así que los embeddings siguen con Gemini.
+ * Separado del proveedor de EMBEDDINGS del RAG (Gemini — ver embeddings.mjs):
+ * cada cosa va con el proveedor que la soporta.
  *
  * Quien analiza registros (analizar.mjs, cli.mjs, lote.mjs) solo conoce
  * consultarAnalista/consultarAnalistaResumen: cambiar de proveedor es
- * cambiar la variable, nada más.
+ * cambiar el módulo al que apuntan estas funciones, nada más.
  */
 
-export const esMaas = () => config.proveedorIA === "maas";
-
-/** Modelo por defecto del proveedor activo (el CLI puede sobreescribirlo con
- *  --modelo). */
+/** Modelo por defecto del análisis (el CLI puede sobreescribirlo con --modelo). */
 export function modeloAnalista() {
-  return esMaas() ? config.maas.modeloAnalisis : config.modelo;
+  return config.openai.modelo;
 }
 
-/** ¿El proveedor activo tiene credenciales? (para pruebas y mensajes claros;
- *  el flujo principal degrada por sí solo — ver cada módulo.) */
+/** ¿El análisis tiene credenciales? (para pruebas y mensajes claros; el
+ *  flujo principal degrada por sí solo — ver cada módulo.) */
 export function analistaConfigurado() {
-  return esMaas() ? Boolean(config.maas.apiKey && config.maas.baseUrl) : Boolean(config.apiKey);
+  return Boolean(config.openai.apiKey);
 }
 
-/** Qué falta para el proveedor activo, en claro (lo muestran los errores). */
+/** Qué falta, en claro (lo muestran los errores). */
 export function mensajeAnalistaNoConfigurado() {
-  return esMaas()
-    ? "Análisis IA sin configurar: el MaaS de Huawei necesita MAAS_API_KEY y MAAS_BASE_URL (el access point del despliegue) en agente-sustentos/.env."
-    : "Análisis IA sin configurar: falta GEMINI_API_KEY en agente-sustentos/.env (créala en aistudio.google.com) — o configura el MaaS de Huawei con IA_PROVEEDOR=maas.";
+  return "Análisis IA sin configurar: falta OPENAI_API_KEY en agente-sustentos/.env (créala en platform.openai.com → API keys).";
 }
 
-/** Veredicto de un registro con sus archivos de sustento (ver gemini.mjs /
- *  maas-llm.mjs para lo que hace cada proveedor). */
+/** Veredicto de un registro con sus archivos de sustento (ver openai.mjs). */
 export async function consultarAnalista({ registro, archivos, modelo }) {
-  const m = modelo ?? modeloAnalista();
-  return esMaas()
-    ? consultarMaas({ registro, archivos, modelo: m })
-    : consultarGemini({ registro, archivos, modelo: m });
+  return consultarOpenAI({ registro, archivos, modelo: modelo ?? modeloAnalista() });
 }
 
 /** Resumen ejecutivo del envío completo. */
 export async function consultarAnalistaResumen({ colaborador, fecha, resultados, modelo, contexto = [] }) {
-  const m = modelo ?? modeloAnalista();
-  return esMaas()
-    ? consultarMaasResumen({ colaborador, fecha, resultados, modelo: m, contexto })
-    : consultarGeminiResumen({ colaborador, fecha, resultados, modelo: m, contexto });
+  return consultarOpenAIResumen({ colaborador, fecha, resultados, modelo: modelo ?? modeloAnalista(), contexto });
 }

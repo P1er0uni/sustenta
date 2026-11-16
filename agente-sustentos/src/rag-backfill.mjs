@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { maasConfigurado } from "./maas.mjs";
+import { embeddingsConfigurados } from "./embeddings.mjs";
 import { fuentesExistentes, indexarInforme } from "./rag.mjs";
 
 /**
@@ -10,7 +10,7 @@ import { fuentesExistentes, indexarInforme } from "./rag.mjs";
  * IA que ya existen en la réplica local de la app (public/informes, según su
  * manifest.json). Idempotente por fuente: los ya indexados se saltan.
  *
- * Uso (desde agente-sustentos/, con el MaaS configurado en .env):
+ * Uso (desde agente-sustentos/, con Gemini configurado en .env):
  *   SUPABASE_TOKEN=<access_token_de_sesion> node src/rag-backfill.mjs
  *
  * El token es el access_token de Supabase de una sesión iniciada en la app
@@ -32,10 +32,8 @@ if (!token) {
   console.log("Falta SUPABASE_TOKEN (access_token de una sesión de la app).");
   process.exit(1);
 }
-if (!maasConfigurado()) {
-  console.log(
-    "Falta configurar los embeddings: MAAS_API_KEY y MAAS_BASE_URL (MaaS de Huawei) o MAAS_PROVEEDOR=gemini con GEMINI_API_KEY.",
-  );
+if (!embeddingsConfigurados()) {
+  console.log("Falta configurar los embeddings: GEMINI_API_KEY en agente-sustentos/.env.");
   process.exit(1);
 }
 

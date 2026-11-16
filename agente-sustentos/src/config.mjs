@@ -23,64 +23,21 @@ const env = { ...leerEnv(), ...process.env };
  *  rompe el header Authorization (ByteString > 255). */
 const limpiar = (v) => String(v ?? "").replace(/^﻿+/, "").trim();
 
-// Proveedor de los EMBEDDINGS del RAG (spec 002): "maas" (producción — si el
-// despliegue MaaS los expone) o "gemini" (pruebas). Cualquier otro valor cae
-// a "maas". NOTA: el MaaS de Huawei (CN-Hong Kong) hoy es SOLO de chat — no
-// expone embeddings — así que el RAG corre con "gemini".
-const proveedorPedidor = limpiar(env.MAAS_PROVEEDOR).toLowerCase();
-const proveedor = ["maas", "gemini"].includes(proveedorPedidor) ? proveedorPedidor : "maas";
-
-// Proveedor del ANÁLISIS (quién genera los informes): "maas" (MaaS de Huawei
-// — producción) o "gemini" (pruebas). Separado del de embeddings: cada cosa
-// va con el proveedor que la soporte.
-const proveedorIAPedidor = limpiar(env.IA_PROVEEDOR).toLowerCase();
-const proveedorIA = ["maas", "gemini"].includes(proveedorIAPedidor) ? proveedorIAPedidor : "maas";
-
-// Cadena de REDUNDANCIA del análisis con el MaaS (chat): el modelo primario
-// se intenta 2 veces y, si no está disponible (cuota agotada, servicio caído,
-// modelo inexistente), se cae al siguiente de la cadena notificando el cambio
-// (ver maas-llm.mjs). MAAS_MODELOS sobreescribe la cadena completa (modelos
-// separados por comas); MAAS_ANALISIS_MODEL fija solo el primario.
-const cadenaPedida = limpiar(env.MAAS_MODELOS)
-  .split(",")
-  .map(limpiar)
-  .filter(Boolean);
-let modelosMaaS = cadenaPedida.length ? cadenaPedida : ["glm-5.3", "glm-5.2", "deepseek-v4.1-flash"];
-const primarioPedidor = limpiar(env.MAAS_ANALISIS_MODEL);
-if (primarioPedidor && !cadenaPedida.length) {
-  modelosMaaS = [primarioPedidor, ...modelosMaaS.filter((m) => m !== primarioPedidor)];
-}
-
 export const config = {
-  // Proveedor del análisis (informes) — lo usa analista.mjs.
-  proveedorIA,
-  apiKey: limpiar(env.GEMINI_API_KEY),
-  // Modelo por defecto de Gemini (análisis de sustentos); se puede
-  // sobreescribir con GEMINI_MODEL o --modelo. gemini-3.1-flash-lite: el más
-  // barato de los actuales, con capa gratuita (aistudio.google.com/docs/pricing).
-  modelo: limpiar(env.GEMINI_MODEL) || "gemini-3.1-flash-lite",
-  modeloProfundo: limpiar(env.GEMINI_MODEL_PRO) || "gemini-3.1-flash-lite",
-  // MaaS de Huawei (ModelArts Studio). Credenciales compartidas por los dos
-  // usos: el ANÁLISIS de los informes (maas-llm.mjs, con IA_PROVEEDOR=maas)
-  // y — si el despliegue los expone — los EMBEDDINGS del RAG (maas.mjs, con
-  // MAAS_PROVEEDOR=maas). El access point (baseUrl) es propio de cada
-  // despliegue MaaS. Sin credenciales del proveedor activo, todo se degrada
-  // elegantemente (se omite y se loguea).
-  maas: {
-    proveedor,
-    apiKey: limpiar(env.MAAS_API_KEY),
-    baseUrl: limpiar(env.MAAS_BASE_URL),
-    // Cadena de redundancia del análisis (chat del MaaS): [primario, …fallbacks].
-    // El primario se intenta 2 veces; si no está disponible se cae al siguiente
-    // y se notifica el cambio (bitácora de maas-llm.mjs → toast en la UI).
-    modelos: modelosMaaS,
-    // Primario de la cadena (el CLI lo puede sobreescribir con --modelo).
-    modeloAnalisis: modelosMaaS[0],
-    // Embeddings del RAG (spec 002). Con gemini: gemini-embedding-001 a 1024
-    // dims — las mismas que bge-m3, para que el paso a producción no cambie
-    // la dimensionalidad del índice.
-    modelo: limpiar(env.MAAS_EMBEDDING_MODEL) || (proveedor === "gemini" ? "gemini-embedding-001" : "bge-m3"),
-    dims: Number(limpiar(env.MAAS_EMBEDDING_DIMS)) || 1024,
+  // ANÁLISIS (quién genera los informes): OpenAI (ver openai.mjs).
+  openai: {
+    apiKey: limpiar(env.OPENAI_API_KEY),
+    // Modelo por defecto; se puede sobreescribir con OPENAI_MODEL o --modelo.
+    modelo: limpiar(env.OPENAI_MODEL) || "gpt-5.6",
+    modeloProfundo: limpiar(env.OPENAI_MODEL_PRO) || "gpt-5.6",
+  },
+  // EMBEDDINGS del RAG (spec 002): Gemini (ver embeddings.mjs). El índice en
+  // Storage ya está etiquetado .gemini.rag — este es el proveedor del RAG.
+  gemini: {
+    apiKey: limpiar(env.GEMINI_API_KEY),
+    // gemini-embedding-001 a 1024 dims (dimensionalidad del índice existente).
+    modelo: limpiar(env.GEMINI_EMBEDDING_MODEL) || "gemini-embedding-001",
+    dims: Number(limpiar(env.GEMINI_EMBEDDING_DIMS)) || 1024,
   },
 };
 

@@ -9,15 +9,14 @@ import {
   nombreRag,
   fuenteDeNombre,
 } from "../src/rag.mjs";
-import { maasConfigurado, incrustar } from "../src/maas.mjs";
-import { config } from "../src/config.mjs";
+import { embeddingsConfigurados, incrustar } from "../src/embeddings.mjs";
 
 // RAG (spec 002). Las pruebas de red (embeddings reales + Storage) requieren
-// credenciales del proveedor activo (MAAS_* o MAAS_PROVEEDOR=gemini) y los
-// archivos .rag en Storage; aquí se cubre lo que siempre debe cumplirse: las
-// funciones puras y la degradación elegante sin configuración — el RAG nunca
-// debe romper el flujo principal. Con credenciales en .env, las pruebas de
-// degradación se saltan (skip) para no gastar API.
+// la GEMINI_API_KEY y los archivos .rag en Storage; aquí se cubre lo que
+// siempre debe cumplirse: las funciones puras y la degradación elegante sin
+// configuración — el RAG nunca debe romper el flujo principal. Con
+// credenciales en .env, las pruebas de degradación se saltan (skip) para no
+// gastar API.
 
 test("htmlATexto: quita tags, scripts, estilos y entidades", () => {
   const html = `<html><head><style>body{color:red}</style><script>alert(1)</script></head>
@@ -44,17 +43,17 @@ test("fragmentar: respeta el tamaño máximo y avanza siempre", () => {
   assert.deepEqual(fragmentar(""), []);
 });
 
-test("sin embeddings configurados: maasConfigurado() es false e incrustar explica qué falta", { skip: maasConfigurado() }, async () => {
+test("sin embeddings configurados: embeddingsConfigurados() es false e incrustar explica qué falta", { skip: embeddingsConfigurados() }, async () => {
   await assert.rejects(incrustar(["hola"]), /no configurado/i);
 });
 
-test("sin embeddings configurados: indexarInforme degrada sin lanzar", { skip: maasConfigurado() }, async () => {
+test("sin embeddings configurados: indexarInforme degrada sin lanzar", { skip: embeddingsConfigurados() }, async () => {
   const res = await indexarInforme({ html: "<p>hola</p>", colaborador: "X", fecha: "2026-11-11", fuente: "a.html", token: "tok" });
   assert.equal(res.ok, false);
   assert.match(res.motivo, /no configurado|token/i);
 });
 
-test("sin token ni embeddings: recuperarContextoEnvio devuelve [] sin lanzar", { skip: maasConfigurado() }, async () => {
+test("sin token ni embeddings: recuperarContextoEnvio devuelve [] sin lanzar", { skip: embeddingsConfigurados() }, async () => {
   assert.deepEqual(await recuperarContextoEnvio({ colaborador: "X", fecha: "2026-11-11", registros: [], token: "" }), []);
   assert.deepEqual(await recuperarContextoEnvio({ colaborador: "X", fecha: "2026-11-11", registros: [], token: "tok" }), []);
 });
@@ -70,13 +69,12 @@ test("similitudCoseno: 1 en la misma dirección, 0 en ortogonales, 0 sin vector 
 });
 
 test("nombreRag/fuenteDeNombre: ida y vuelta con etiqueta de proveedor", () => {
-  const sufijo = `.${config.maas.proveedor}.rag`;
+  const sufijo = ".gemini.rag";
   assert.equal(nombreRag("informe-envio-juan-pablo-2026-09-02.html"), `rag-informe-envio-juan-pablo-2026-09-02${sufijo}`);
   assert.equal(fuenteDeNombre(`rag-informe-envio-juan-pablo-2026-09-02${sufijo}`), "informe-envio-juan-pablo-2026-09-02.html");
-  // La etiqueta permite que convivan índices de dos proveedores (pruebas con
-  // gemini / producción con maas) sin chocar: el bucket es append-only.
+  // La etiqueta del proveedor de embeddings queda fija (gemini): el bucket es
+  // append-only y los índices ya existentes usan esa etiqueta.
   assert.equal(fuenteDeNombre("rag-informe-x.gemini.rag"), "informe-x.html");
-  assert.equal(fuenteDeNombre("rag-informe-x.maas.rag"), "informe-x.html");
   // El nombre nunca sale del prefijo informes-ia/ ni gana extensiones raras.
   assert.equal(nombreRag("a b/c.html"), `rag-a-b-c${sufijo}`);
   assert.ok(!nombreRag("x.html").includes("/"));

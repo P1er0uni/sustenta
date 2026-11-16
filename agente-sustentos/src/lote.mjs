@@ -3,7 +3,6 @@ import { extraer } from "./extraer.mjs";
 import { consultarAnalistaResumen } from "./analista.mjs";
 import { construirHtmlLote, veredictoGlobalDe } from "./informe.mjs";
 import { recuperarContextoEnvio } from "./rag.mjs";
-import { avisosDeCambioDeModelo, limpiarCambiosDeModelo } from "./maas-llm.mjs";
 
 const sinTildesLote = (t) => String(t ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
@@ -17,13 +16,9 @@ const sinTildesLote = (t) => String(t ?? "").normalize("NFD").replace(/[̀-ͯ]/g
  *
  * `token` (opcional): access_token de Supabase del usuario. Con él, se recupera
  * el contexto RAG (informes anteriores) para el resumen ejecutivo; sin él o sin
- * MaaS configurado, el informe sale igual que sin RAG.
+ * Gemini configurado, el informe sale igual que sin RAG.
  */
 export async function analizarEnvioLote({ colaborador, fecha, casos, modelo, token, contexto }) {
-  // Bitácora de la corrida: en Vercel el módulo sobrevive entre invocaciones
-  // del mismo lambda, así que los avisos de cambio de modelo (redundancia del
-  // MaaS) se limpian al empezar cada envío.
-  limpiarCambiosDeModelo();
   // Huellas de contenido: detectan la misma evidencia reutilizada entre registros.
   const cargados = await Promise.all(
     casos.map(async ({ registro, rutas }) => {
@@ -46,7 +41,7 @@ export async function analizarEnvioLote({ colaborador, fecha, casos, modelo, tok
   const resultados = analisis.map((r, i) => ({ ...r, registro: cargados[i].registro }));
 
   // RAG (spec 002): contexto de informes anteriores para el resumen ejecutivo.
-  // recuperarContextoEnvio nunca lanza — sin token/MaaS/tabla devuelve [].
+  // recuperarContextoEnvio nunca lanza — sin token/Gemini/tabla devuelve [].
   const ctx = contexto ?? (token ? await recuperarContextoEnvio({ colaborador, fecha, registros: cargados.map((c) => c.registro), token }) : []);
 
   // Resumen ejecutivo + acción recomendada (1 llamada extra a la IA). Si falla,
@@ -86,9 +81,5 @@ export async function analizarEnvioLote({ colaborador, fecha, casos, modelo, tok
     (r) => `${r.veredicto.toUpperCase()} · ${r.registro.id} · ${r.registro.fecha} · ${r.registro.horas} h`,
   );
   if (resumen) lineas.push(`Resumen: ${resumen.resumen}`);
-  // Redundancia del MaaS: avisos de cambio de modelo (deduplicados) — van en
-  // la salida y aparte para que la plataforma los muestre como notificación.
-  const avisos = avisosDeCambioDeModelo();
-  for (const a of avisos) lineas.push(a);
-  return { html, nombreHtml, entrada, salida: lineas.join("\n"), avisos };
+  return { html, nombreHtml, entrada, salida: lineas.join("\n") };
 }

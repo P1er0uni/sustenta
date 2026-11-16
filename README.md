@@ -20,20 +20,20 @@ Requisito único: **Node.js 20 o superior** (`node --version` debe responder).
    "Conectar Outlook/Teams" más abajo).
 
 3. Para las funciones de IA (análisis de sustentos, informe por envío y base de
-   conocimiento), activa el agente — **lo único que tienes que añadir es una
-   clave de Gemini**:
+   conocimiento), activa el agente — **necesitas dos claves**:
 
-   1. Crea una clave gratis en [aistudio.google.com](https://aistudio.google.com)
-      → **Get API key** (la capa gratuita alcanza para probar).
-   2. En la carpeta `agente-sustentos/` ejecuta `npm install` (una sola vez).
-   3. Copia `agente-sustentos/.env.example` como `agente-sustentos/.env` y pega
-      tu clave en la línea `GEMINI_API_KEY=`.
-   4. Reinicia `npm run dev` si estaba corriendo.
+   1. Una clave de OpenAI ([platform.openai.com](https://platform.openai.com) →
+      API keys): genera los informes (veredictos y resúmenes).
+   2. Una clave de Gemini, gratis en [aistudio.google.com](https://aistudio.google.com)
+      → **Get API key**: calcula los embeddings del RAG (base de conocimiento).
+   3. En la carpeta `agente-sustentos/` ejecuta `npm install` (una sola vez).
+   4. Copia `agente-sustentos/.env.example` como `agente-sustentos/.env` y pega
+      las claves en `OPENAI_API_KEY=` y `GEMINI_API_KEY=`.
+   5. Reinicia `npm run dev` si estaba corriendo.
 
-   Sin la clave, todo lo demás funciona igual: las funciones de IA se desactivan
-   solas con un mensaje claro y nunca rompen la app. Con la clave, el RAG de la
-   base de conocimiento usa el modo `gemini` (embeddings con esa misma clave),
-   que es el valor por defecto del `.env.example`.
+   Sin las claves, todo lo demás funciona igual: las funciones de IA se desactivan
+   solas con un mensaje claro y nunca rompen la app. Sin `GEMINI_API_KEY`, el RAG
+   de la base de conocimiento se omite (el resto de la IA funciona igual).
 
 Los comandos del agente (análisis, informes en PDF, límites de uso) están en
 `agente-sustentos/LEEME.md`. El despliegue en Vercel, en `GUIA-DEPLOY.md`.

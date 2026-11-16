@@ -140,10 +140,9 @@ function BaseConocimiento() {
           <Vacio mensaje="Cargando estado de la base…" />
         ) : estado && !estado.configurado ? (
           <Aviso tono="info" titulo="IA de embeddings sin configurar">
-            La base de conocimiento necesita el MaaS de Huawei: define <code>MAAS_API_KEY</code> y{" "}
-            <code>MAAS_BASE_URL</code> (el access point del despliegue) en el entorno del servidor — o{" "}
-            <code>MAAS_PROVEEDOR=gemini</code> para probar con la clave de Gemini. Mientras falten, la app
-            funciona igual — sin indexado ni búsqueda.
+            La base de conocimiento necesita a Gemini: define <code>GEMINI_API_KEY</code> en el entorno del
+            servidor (créala en aistudio.google.com). Mientras falte, la app funciona igual — sin indexado
+            ni búsqueda.
           </Aviso>
         ) : estado && estado.error ? (
           <Aviso tono="alerta" titulo="No se pudo leer la base de conocimiento">
@@ -151,7 +150,7 @@ function BaseConocimiento() {
           </Aviso>
         ) : estado && estado.informes === 0 ? (
           <Aviso tono="info" titulo="La base de conocimiento está vacía">
-            Aún no hay informes indexados. Con el MaaS de Huawei configurado, cada informe IA generado
+            Aún no hay informes indexados. Con Gemini configurado, cada informe IA generado
             queda indexado automáticamente; para los que ya existen, corre el backfill del agente
             (<code>rag-backfill.mjs</code>).
           </Aviso>
@@ -188,10 +187,9 @@ function BaseConocimiento() {
 
         {errorBusqueda ? (
           <div className="px-4 py-3">
-            {errorBusqueda.motivo === "maas" ? (
+            {errorBusqueda.motivo === "embeddings" ? (
               <Aviso tono="info" titulo="IA de embeddings sin configurar">
-                Faltan las credenciales de embeddings (<code>MAAS_API_KEY</code>/<code>MAAS_BASE_URL</code> o{" "}
-                <code>MAAS_PROVEEDOR=gemini</code> con <code>GEMINI_API_KEY</code>).
+                Falta la credencial de embeddings (<code>GEMINI_API_KEY</code> en el entorno del servidor).
               </Aviso>
             ) : (
               <Aviso tono="alerta" titulo="La búsqueda falló">

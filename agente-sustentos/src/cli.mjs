@@ -6,7 +6,6 @@ import { extraer } from "./extraer.mjs";
 import { generarInforme, generarInformeLote } from "./informe.mjs";
 import { consultarAnalistaResumen } from "./analista.mjs";
 import { recuperarContextoEnvio } from "./rag.mjs";
-import { avisosDeCambioDeModelo } from "./maas-llm.mjs";
 
 const USO = `Uso: npm run analizar -- <caso.json> [<caso2.json> ...] [--sin-ia] [--sin-pdf] [--lote] [--lote-sin-pdf] [--modelo <id>]
 
@@ -29,16 +28,6 @@ if (casos.length === 0) {
 
 const ICONO = { sustenta: "✅", sustenta_parcial: "🟡", no_sustenta: "⛔", ilegible: "❓", sin_analisis_ia: "⚙️" };
 const linea = (t = "") => console.log(t);
-
-// Redundancia del MaaS: imprime los avisos de cambio de modelo que aparecieron
-// desde la última impresión (los análisis corren en paralelo y el resumen
-// ejecutivo viene después).
-let avisosImpresos = 0;
-const imprimirAvisosDeModelo = () => {
-  const todos = avisosDeCambioDeModelo();
-  for (const a of todos.slice(avisosImpresos)) linea(`\n⚠  ${a}`);
-  avisosImpresos = todos.length;
-};
 
 const cargados = await Promise.all(
   casos.map(async (rutaCaso) => {
@@ -98,7 +87,6 @@ for (const [i, r] of resultados.entries()) {
     for (const a of r.reglas) linea(`     [${a.severidad}] ${a.codigo} (${a.archivo.replace(/^[0-9a-f-]{36}-/, "")}): ${a.detalle}`);
   }
 }
-imprimirAvisosDeModelo();
 
 const carpeta = fileURLToPath(new URL("../resultados/", import.meta.url));
 await mkdir(carpeta, { recursive: true });
@@ -116,7 +104,7 @@ if (!flag("--sin-pdf")) {
     const fecha = cargados[0]?.caso.registro.fecha ?? "";
     // RAG (spec 002): la plataforma pasa el token de Supabase del usuario por
     // env (SUPABASE_TOKEN) para recuperar informes anteriores. Sin token o sin
-    // MaaS configurado, el contexto queda vacío y el informe sale igual.
+    // Gemini configurado, el contexto queda vacío y el informe sale igual.
     const tokenRag = process.env.SUPABASE_TOKEN || "";
     const contexto = tokenRag
       ? await recuperarContextoEnvio({
@@ -137,7 +125,6 @@ if (!flag("--sin-pdf")) {
         linea(`\n(Sin resumen de IA: ${e.message})`);
       }
     }
-    imprimirAvisosDeModelo();
     const out = await generarInformeLote({
       colaborador,
       fecha,
